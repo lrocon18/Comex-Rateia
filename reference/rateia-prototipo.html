@@ -1,0 +1,498 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Distribuidor de notas de saída</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#EAEEF2; --card:#FFFFFF; --ink:#14202B; --muted:#5A6B7A; --faint:#8593A0;
+    --line:#DCE2E8; --line2:#EAEEF2;
+    --accent:#0E7C86; --accent-d:#0A5A61; --accent-bg:#E2F1F1;
+    --avail:#1F7A4D; --avail-bg:#E7F3EC;
+    --dist:#2A5DA6; --dist-bg:#E8EFF8;
+    --zero:#94A3B0; --zero-bg:#EEF1F4;
+    --warn:#9A5A00; --danger:#B23A3A; --danger-bg:#F7E9E9;
+    --r:8px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--paper);color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .num,.mono{font-variant-numeric:tabular-nums}
+  .code{font-family:"IBM Plex Mono",monospace;font-size:12.5px;letter-spacing:.2px;color:var(--muted)}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 20px 64px}
+
+  /* header ledger */
+  header.top{background:var(--ink);color:#fff}
+  .top-in{max-width:1120px;margin:0 auto;padding:16px 20px 0}
+  .brand{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+  .brand h1{font-size:17px;font-weight:600;margin:0;letter-spacing:.2px}
+  .brand span{color:#9FB0BC;font-size:12.5px}
+  .ledger{display:flex;gap:28px;flex-wrap:wrap;margin:14px 0 2px}
+  .ledger .cell{padding-bottom:14px}
+  .ledger .k{font-size:11px;text-transform:none;color:#8EA0AD;letter-spacing:.3px}
+  .ledger .v{font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px}
+  .ledger .v.small{font-size:15px}
+  .tabs{display:flex;gap:2px;max-width:1120px;margin:0 auto;padding:0 20px}
+  .tab{appearance:none;background:none;border:0;color:#B9C6D0;font:inherit;font-size:13.5px;padding:11px 16px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tab:hover{color:#fff}
+  .tab.on{color:#fff;border-bottom-color:var(--accent)}
+  .tabbar{background:var(--ink)}
+
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-top:20px;overflow:hidden}
+  .panel > .head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line2)}
+  .panel > .head h2{margin:0;font-size:14.5px;font-weight:600}
+  .panel > .head .sub{color:var(--muted);font-size:12.5px}
+  .body{padding:16px 18px}
+  .body.tight{padding:6px 0}
+
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line2);vertical-align:middle}
+  th{font-size:11.5px;font-weight:500;color:var(--faint);letter-spacing:.2px}
+  td.r,th.r{text-align:right}
+  tbody tr:last-child td{border-bottom:0}
+  tr.zeroed td{color:var(--zero)}
+  tr.zeroed .code{color:var(--zero)}
+  .prod{max-width:340px}
+  .chip{display:inline-block;font-size:11px;font-weight:500;padding:1px 7px;border-radius:20px;line-height:1.7}
+  .chip.z{background:var(--zero-bg);color:var(--zero)}
+  .chip.a{background:var(--avail-bg);color:var(--avail)}
+  .chip.d{background:var(--dist-bg);color:var(--dist)}
+
+  input,select{font:inherit;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:8px 10px}
+  input:focus,select:focus{outline:2px solid var(--accent-bg);border-color:var(--accent);outline-offset:0}
+  input[type=range]{padding:0}
+  .field{display:flex;flex-direction:column;gap:5px}
+  .field label{font-size:12px;color:var(--muted)}
+  .btn{appearance:none;border:1px solid var(--line);background:#fff;color:var(--ink);font:inherit;font-size:13px;padding:8px 14px;border-radius:var(--r);cursor:pointer}
+  .btn:hover{border-color:#B9C6D0}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:500}
+  .btn.primary:hover{background:var(--accent-d);border-color:var(--accent-d)}
+  .btn.ghost{background:none;border:0;color:var(--accent);padding:6px 8px}
+  .btn.mini{padding:4px 9px;font-size:12px}
+  .btn.danger{color:var(--danger);border-color:#E7CFCF}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .grow{flex:1}
+  .row-form{display:grid;grid-template-columns:180px 1fr;gap:14px 16px;align-items:end}
+  .row-form.wide{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+  .hint{color:var(--muted);font-size:12.5px}
+  .empty{color:var(--muted);text-align:center;padding:34px 12px;font-size:13.5px}
+  .rule{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px}
+  .rule .rk{font-size:11px;color:#fff;background:var(--accent);border-radius:5px;padding:1px 7px;font-weight:500;margin-right:8px}
+  .rule .rk.p2{background:#3E6EB0}.rule .rk.p3{background:#7A5AA6}.rule .rk.p4{background:#4E8A5C}
+  .rule .desc{font-size:13px}
+  .rule .meta{color:var(--muted);font-size:12px;margin-top:2px}
+  .pickbox{max-height:180px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin-top:6px}
+  .pickbox label{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--ink);padding:2px 0}
+  .noteval{display:flex;gap:22px;flex-wrap:wrap;margin:2px 0 14px}
+  .noteval .nb{border:1px solid var(--line);border-radius:10px;padding:10px 14px;min-width:150px}
+  .noteval .nb .cn{font-size:12.5px;color:var(--muted)}
+  .noteval .nb .cv{font-size:17px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:3px}
+  .banner{display:flex;gap:10px;align-items:flex-start;background:var(--accent-bg);border:1px solid #C7E3E3;color:var(--accent-d);border-radius:10px;padding:11px 14px;font-size:13px;margin:16px 0}
+  .banner.warn{background:#FBF3E4;border-color:#EBD9B4;color:var(--warn)}
+  .tag{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:20px;padding:1px 9px}
+  .filedrop{border:1px dashed var(--line);border-radius:10px;padding:12px 14px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+  a.hidden-dl{display:none}
+</style>
+
+<header class="top">
+  <div class="top-in">
+    <div class="brand">
+      <h1>Distribuidor de notas de saída</h1>
+      <span>preparação da distribuição · protótipo</span>
+    </div>
+    <div class="ledger" id="ledger"></div>
+  </div>
+  <div class="tabbar">
+    <nav class="tabs" id="tabs">
+      <button class="tab on" data-t="estoque">Estoque</button>
+      <button class="tab" data-t="distribuir">Distribuir</button>
+      <button class="tab" data-t="resultado">Resultado</button>
+      <button class="tab" data-t="sobra">Sobra</button>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap"><div id="view"></div></div>
+<a class="hidden-dl" id="dl"></a>
+
+<script>
+/* ---------- embedded real Maino stock ---------- */
+const MAINO = [{"codigo": "46025", "produto": "Disco flexivel para polimento", "estoque": 600, "pu": 1.2193}, {"codigo": "TP-1911", "produto": "Tecido de 100% poliester largura 150 cm 75 gsm", "estoque": 233, "pu": 210.4557}, {"codigo": "TP-2209", "produto": "Tecido de 100% poliester largura 150 cm 75 gsm", "estoque": 172, "pu": 209.7561}, {"codigo": "TP-2211", "produto": "Tecido de 100% poliester largura 150 cm 75 gsm", "estoque": 365, "pu": 210.278}, {"codigo": "WM1-51", "produto": "Tubo do trem de pouso para drone", "estoque": 480, "pu": 5.5863}, {"codigo": "WM1-53-2", "produto": "Conector curvo da bomba para drone", "estoque": 300, "pu": 1.7392}, {"codigo": "WM1-57-2", "produto": "Suporte de helice para drone", "estoque": 50, "pu": 4.956}, {"codigo": "WM1-59", "produto": "Peca de fixacao da helice para drone", "estoque": 50, "pu": 6.0592}, {"codigo": "WM1-60", "produto": "Capa de protecao do motor para drone", "estoque": 1724, "pu": 1.9633}, {"codigo": "WM1-60-1", "produto": "Modulo de antena rtk para drone", "estoque": 150, "pu": 8.1955}, {"codigo": "WM1-60-5", "produto": "Adaptador de helice para drone", "estoque": 50, "pu": 1.5559}, {"codigo": "WM1-61 WM1-68", "produto": "Modulo de alimentacao para drone", "estoque": 32, "pu": 48.434}, {"codigo": "WM1-69", "produto": "Cabo de sinal para drone", "estoque": 120, "pu": 5.6673}, {"codigo": "WM1-70", "produto": "Revestimento da alca para drone", "estoque": 100, "pu": 3.1342}, {"codigo": "WM1-71", "produto": "Presilha de cabo do trem de pouso para drone", "estoque": 200, "pu": 1.3206}, {"codigo": "WM1-71-1", "produto": "Etiqueta indicadora para drone", "estoque": 516, "pu": 0.9594}, {"codigo": "WM1-71-3", "produto": "Modulo para drone", "estoque": 50, "pu": 9.7916}, {"codigo": "WM1-72", "produto": "Caixa de papel para embalagem", "estoque": 156, "pu": 140.3342}, {"codigo": "WM2-102-WM2-103", "produto": "Estacao de carregamento para bateria de drone", "estoque": 2, "pu": 1281.6333}, {"codigo": "WM2-104-2", "produto": "Reservatorio de pulverizacao para drone", "estoque": 88, "pu": 8.7865}, {"codigo": "WM2-105", "produto": "Conector de suporte para drone", "estoque": 300, "pu": 1.0563}, {"codigo": "WM2-105-2", "produto": "Anel de vedacao do motor para drone", "estoque": 3000, "pu": 0.7038}, {"codigo": "WM2-105-3", "produto": "Base de fixacao para drone", "estoque": 500, "pu": 2.0942}, {"codigo": "WM2-105-4", "produto": "Luva de engate rapido da barra de pulverizacao para drone", "estoque": 150, "pu": 0.6859}, {"codigo": "WM2-106-4", "produto": "Conjunto da porta do compartimento para drone", "estoque": 10, "pu": 8.1118}, {"codigo": "WM2-107", "produto": "Braco estrutural de plastico para drone", "estoque": 658, "pu": 13.0482}, {"codigo": "WM2-108-1", "produto": "Tubo para medidor de fluxo para drone", "estoque": 300, "pu": 1.0353}, {"codigo": "WM2-108-3", "produto": "Cabo de sinal para luz de navegacao de drone", "estoque": 50, "pu": 1.1273}, {"codigo": "WM2-108-4", "produto": "Presilha para helice de drone", "estoque": 50, "pu": 0.8551}, {"codigo": "WM2-110-1", "produto": "Barra de trem de pouso para drone", "estoque": 200, "pu": 6.1803}, {"codigo": "WM2-110-2", "produto": "Tubo estrutural para drone", "estoque": 61, "pu": 7.6438}, {"codigo": "WM2-112-2", "produto": "Cabo do medidor de fluxo da bomba para drone", "estoque": 90, "pu": 2.0892}, {"codigo": "WM2-112-4", "produto": "Cabo de alimentacao para drone", "estoque": 110, "pu": 2.1035}, {"codigo": "WM2-115-1", "produto": "Arruela para helice de drone", "estoque": 4500, "pu": 0.6951}, {"codigo": "WM2-117-3", "produto": "Arruela para helice de drone", "estoque": 1000, "pu": 0.705}, {"codigo": "WM2-118-2", "produto": "Arruela para helice de drone", "estoque": 1000, "pu": 0.7157}, {"codigo": "WM2-127", "produto": "Mangueira do braco estrutural para drone", "estoque": 800, "pu": 2.4976}, {"codigo": "WM2-131-1", "produto": "Peca de conexao do trem de pouso para drone", "estoque": 300, "pu": 2.3283}, {"codigo": "WM2-135", "produto": "Antena para sistema de drone", "estoque": 600, "pu": 4.2147}, {"codigo": "WM2-136-1", "produto": "Tampa de protecao da placa de distribuicao de energia para drone", "estoque": 50, "pu": 1.3797}, {"codigo": "WM2-136-3", "produto": "Almofada de amortecimento do suporte da helice para drone", "estoque": 200, "pu": 1.4198}, {"codigo": "WM2-137", "produto": "Carcaca da barra de pulverizacao para drone", "estoque": 35, "pu": 10.5229}, {"codigo": "WM2-137-2", "produto": "Cabo adaptador para drone", "estoque": 100, "pu": 7.7456}, {"codigo": "WM2-37", "produto": "Tubo de aluminio para drone wm2-37 tubo de alumnio para drone", "estoque": 4, "pu": 4.541}, {"codigo": "WM2-37-1", "produto": "Carcaca plastica da lanca de pulverizacao para drone", "estoque": 150, "pu": 4.1953}, {"codigo": "WM2-38", "produto": "Tubo de aluminio para drone wm2-38 tubo de alumnio para drone", "estoque": 3, "pu": 3.855}, {"codigo": "WM2-39", "produto": "Tubo de aluminio para drone wm2-39 tubo de alumnio para drone", "estoque": 640, "pu": 4.5484}, {"codigo": "WM2-41-2", "produto": "Tampa de protecao para motor de drone, plastico wm2-41-2 tampa de proteo para motor de drone, plstico", "estoque": 200, "pu": 6.814}, {"codigo": "WM2-42-1", "produto": "Mangueira da lanca de pulverizacao para drone", "estoque": 500, "pu": 0.6819}, {"codigo": "WM2-44-WM2-58", "produto": "Modulo eletronico para drone", "estoque": 30, "pu": 41.3416}, {"codigo": "WM2-59-1", "produto": "Tubo de aluminio para drone wm2-59-1 tubo de alumnio para drone", "estoque": 1000, "pu": 0.9244}, {"codigo": "WM2-59-4", "produto": "Junta rotativa da barra de pulverizacao, plastico wm2-59-4 junta rotativa da barra de pulverizao, plstico", "estoque": 30, "pu": 2.0502}, {"codigo": "WM2-62-6", "produto": "Almofada de protecao da tampa para drone", "estoque": 100, "pu": 1.426}, {"codigo": "WM2-63", "produto": "Tampa de protecao para motor de drone, plastico wm2-63 tampa de proteo para motor de drone, plstico", "estoque": 282, "pu": 40.1808}, {"codigo": "WM2-79", "produto": "Anel de vedacao para drone", "estoque": 200, "pu": 0.7014}, {"codigo": "WM2-79-1", "produto": "Tubo de aluminio para drone wm2-79-1 tubo de alumnio para drone", "estoque": 1000, "pu": 0.8211}, {"codigo": "WM2-80", "produto": "Vedacao em borracha para sistema de drone", "estoque": 6000, "pu": 0.6478}, {"codigo": "WM2-80-2", "produto": "Capa protetora fixa metalica para bico de pulverizacao wm2-80-2 capa protetora fixa metlica para bico de pulverizao", "estoque": 200, "pu": 3.1809}, {"codigo": "WM2-80-4", "produto": "Anel de retencao para sistema de drone", "estoque": 300, "pu": 0.7034}, {"codigo": "WM2-80-5", "produto": "Carcaca do braco de pulverizacao de drone", "estoque": 300, "pu": 0.7034}, {"codigo": "WM2-80-6", "produto": "Bucha do braco de pulverizacao de drone", "estoque": 200, "pu": 0.7034}, {"codigo": "WM2-81", "produto": "Mola de compressao para drone", "estoque": 600, "pu": 0.7678}, {"codigo": "WM2-81-1", "produto": "Amortecimento para fixacao de helice wm2-81-1 amortecimento para fixao de hlice", "estoque": 100, "pu": 1.5348}, {"codigo": "WM2-81-3", "produto": "Mola de torcao para gatilho wm2-81-3 mola de toro para gatilho", "estoque": 100, "pu": 1.0428}, {"codigo": "WM2-82", "produto": "Tampa da carcaca de drone", "estoque": 163, "pu": 5.5567}, {"codigo": "WM2-83", "produto": "Tampa do tanque de drone", "estoque": 100, "pu": 2.8058}, {"codigo": "WM2-84", "produto": "Reservatorio de plastico para agua wm2-84 reservatrio de plstico para gua", "estoque": 1000, "pu": 0.5431}, {"codigo": "WM2-86", "produto": "Motor da bomba de drone", "estoque": 3, "pu": 10.1065}, {"codigo": "WM2-86-11", "produto": "Anel de vedacao para bico centrifugo de drone", "estoque": 100, "pu": 0.7006}, {"codigo": "WM2-86-17", "produto": "Conjunto de bico centrifugo para drone", "estoque": 630, "pu": 1.5326}, {"codigo": "WM2-86-7", "produto": "Cabo adaptador de payload para drone", "estoque": 58, "pu": 1.5529}, {"codigo": "WM2-87-1", "produto": "Reservatorio de plastico para agua wm2-87-1 reservatrio de plstico para gua", "estoque": 50, "pu": 2.4723}, {"codigo": "WM2-87-6", "produto": "Luva plastica de borracha para manipulo de travamento", "estoque": 1500, "pu": 0.6863}, {"codigo": "WM2-88-WM2-90", "produto": "Modulo de carregamento para drone", "estoque": 6, "pu": 226.3129}, {"codigo": "WM2-91", "produto": "Carregador eletrico plastico para bateria de drone", "estoque": 1, "pu": 17.504}, {"codigo": "WM2-92-WM2-101", "produto": "Carregador inteligente para bateria de drone", "estoque": 20, "pu": 214.6152}];
+
+/* ---------- state ---------- */
+const S = {
+  stock: MAINO.map(x=>({codigo:x.codigo, produto:x.produto, estoque:x.estoque, pu:x.pu})),
+  clients: [],
+  rules: [],           // {id,tipo,cliente,codigo,pct,scope:'all'|'sel',codigos:[],valor,clientes:[],variacao}
+  result: null,        // {alloc, leftover, availFinal}
+  tab: 'estoque',
+  stockFilter: ''
+};
+let seq = 1; const uid=()=>'r'+(seq++);
+
+/* ---------- utils ---------- */
+const $ = s=>document.querySelector(s);
+const puMap=()=>Object.fromEntries(S.stock.map(s=>[s.codigo,s.pu]));
+const prodMap=()=>Object.fromEntries(S.stock.map(s=>[s.codigo,s.produto]));
+const iniMap=()=>Object.fromEntries(S.stock.map(s=>[s.codigo,s.estoque]));
+function brl(n){return 'R$ '+(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function nf(n){return (n||0).toLocaleString('pt-BR');}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+/* ---------- engine ---------- */
+function metaFill(codigos, avail, pu, target){
+  const take={}; let value=0;
+  const desc=[...codigos].filter(c=>avail[c]>0).sort((a,b)=>pu[b]-pu[a]);
+  for(const c of desc){
+    const room=target-value; if(room<=0) break;
+    let n=Math.floor(room/pu[c]);
+    n=Math.min(n, avail[c]-(take[c]||0));
+    if(n>0){take[c]=(take[c]||0)+n; value+=n*pu[c];}
+  }
+  let guard=0;
+  while(value<target && guard++<200000){
+    const cand=[...codigos].filter(c=>(avail[c]-(take[c]||0))>0).sort((a,b)=>pu[a]-pu[b]);
+    if(!cand.length) break;
+    const c=cand[0]; take[c]=(take[c]||0)+1; value+=pu[c];
+  }
+  return {take,value};
+}
+function splitEqual(clients, avail, variacao){
+  const res={}; clients.forEach(c=>res[c]={});
+  const n=clients.length; if(!n) return res;
+  const cods=Object.keys(avail).filter(c=>avail[c]>0);
+  for(const c of cods){
+    const a=avail[c], base=Math.floor(a/n); let rem=a-base*n;
+    const start=Math.floor(Math.random()*n);
+    clients.forEach(cl=>res[cl][c]=base);
+    for(let k=0;k<rem;k++){res[clients[(start+k)%n]][c]+=1;}
+    avail[c]=0;
+  }
+  const moves=Math.max(0,variacao|0);
+  for(let m=0;m<moves;m++){
+    if(!cods.length) break;
+    const c=cods[Math.floor(Math.random()*cods.length)];
+    const givers=clients.filter(cl=>res[cl][c]>0);
+    if(givers.length<1||n<2) continue;
+    const g=givers[Math.floor(Math.random()*givers.length)];
+    let r=clients[Math.floor(Math.random()*n)]; if(r===g) r=clients[(clients.indexOf(g)+1)%n];
+    res[g][c]-=1; res[r][c]+=1;
+  }
+  return res;
+}
+function compute(){
+  const pu=puMap();
+  const avail=iniMap();
+  const alloc={};
+  const ensure=c=>{if(!alloc[c])alloc[c]={};};
+  const give=(cl,c,q)=>{q=Math.min(Math.floor(q),avail[c]); if(q<=0)return; ensure(cl); alloc[cl][c]=(alloc[cl][c]||0)+q; avail[c]-=q;};
+  const byTipo=t=>S.rules.filter(r=>r.tipo===t);
+  const scopeCods=r=> r.scope==='sel'? (r.codigos||[]) : S.stock.map(s=>s.codigo);
+
+  byTipo('fixo').forEach(r=> give(r.cliente, r.codigo, avail[r.codigo]*(r.pct/100)) );
+  byTipo('percentual').forEach(r=> scopeCods(r).forEach(c=> give(r.cliente, c, avail[c]*(r.pct/100)) ));
+  byTipo('meta').forEach(r=>{
+    const cods=scopeCods(r).filter(c=>avail[c]>0);
+    const {take}=metaFill(cods, avail, pu, r.valor);
+    Object.keys(take).forEach(c=> give(r.cliente,c,take[c]) );
+  });
+  byTipo('igual').forEach(r=>{
+    const cls=(r.clientes&&r.clientes.length)?r.clientes:S.clients.slice();
+    const res=splitEqual(cls, avail, r.variacao);
+    for(const cl in res) for(const c in res[cl]){ if(res[cl][c]>0){ensure(cl); alloc[cl][c]=(alloc[cl][c]||0)+res[cl][c];}}
+  });
+
+  const leftover={}; for(const c in avail) if(avail[c]>0) leftover[c]=avail[c];
+  S.result={alloc, leftover, availFinal:{...avail}};
+}
+function distributedMap(){ // codigo -> qty distributed
+  const d={}; S.stock.forEach(s=>d[s.codigo]=0);
+  if(S.result){ for(const cl in S.result.alloc) for(const c in S.result.alloc[cl]) d[c]=(d[c]||0)+S.result.alloc[cl][c]; }
+  return d;
+}
+function clientTotal(cl){
+  const pu=puMap(); let v=0; const a=S.result?.alloc?.[cl]||{};
+  for(const c in a) v+=a[c]*pu[c]; return v;
+}
+
+/* ---------- ledger ---------- */
+function renderLedger(){
+  const pu=puMap(); const dist=distributedMap();
+  const ini=S.stock.reduce((s,x)=>s+x.estoque,0);
+  const distU=Object.values(dist).reduce((a,b)=>a+b,0);
+  const disp=ini-distU;
+  const valDisp=S.stock.reduce((s,x)=>s+Math.max(0,(x.estoque-(dist[x.codigo]||0)))*x.pu,0);
+  const nClients=Object.keys(S.result?.alloc||{}).length || S.clients.length;
+  $('#ledger').innerHTML=`
+    <div class="cell"><div class="k">Produtos</div><div class="v small">${S.stock.length}</div></div>
+    <div class="cell"><div class="k">Estoque inicial</div><div class="v">${nf(ini)}</div></div>
+    <div class="cell"><div class="k">Distribuído</div><div class="v" style="color:#9CC7F0">${nf(distU)}</div></div>
+    <div class="cell"><div class="k">Disponível</div><div class="v" style="color:#8FE0B4">${nf(disp)}</div></div>
+    <div class="cell"><div class="k">Valor da sobra</div><div class="v small">${brl(valDisp)}</div></div>
+    <div class="cell"><div class="k">Clientes</div><div class="v small">${nClients}</div></div>`;
+}
+
+/* ---------- views ---------- */
+function view(){
+  renderLedger();
+  const v=$('#view');
+  if(S.tab==='estoque') v.innerHTML=viewEstoque();
+  else if(S.tab==='distribuir') v.innerHTML=viewDistribuir();
+  else if(S.tab==='resultado') v.innerHTML=viewResultado();
+  else if(S.tab==='sobra') v.innerHTML=viewSobra();
+  wire();
+}
+
+function viewEstoque(){
+  const dist=distributedMap(); const f=S.stockFilter.toLowerCase();
+  const rows=S.stock.filter(s=>!f||s.codigo.toLowerCase().includes(f)||s.produto.toLowerCase().includes(f)).map(s=>{
+    const d=dist[s.codigo]||0, disp=s.estoque-d, z=disp<=0;
+    return `<tr class="${z?'zeroed':''}">
+      <td class="code">${esc(s.codigo)}</td>
+      <td class="prod">${esc(s.produto)}</td>
+      <td class="r num">${nf(s.estoque)}</td>
+      <td class="r num">${d?`<span class="chip d">${nf(d)}</span>`:'<span class="num" style="color:var(--faint)">0</span>'}</td>
+      <td class="r num">${z?'<span class="chip z">0</span>':`<span class="chip a">${nf(disp)}</span>`}</td>
+      <td class="r num">${brl(s.pu)}</td>
+      <td class="r num">${brl(Math.max(0,disp)*s.pu)}</td>
+    </tr>`;}).join('');
+  return `<div class="panel">
+    <div class="head">
+      <div><h2>Controle geral do estoque</h2><div class="sub">todos os produtos da operação — inclusive os que zeraram</div></div>
+      <div class="toolbar">
+        <input id="estFilter" placeholder="filtrar por código ou nome" value="${esc(S.stockFilter)}" style="width:240px">
+        <label class="btn mini" style="cursor:pointer">Substituir Maino<input type="file" id="impMaino" accept=".xlsx,.xls" hidden></label>
+      </div>
+    </div>
+    <div class="body tight">
+      <table>
+        <thead><tr>
+          <th>Código</th><th>Produto</th>
+          <th class="r">Estoque inicial</th><th class="r">Distribuído</th><th class="r">Disponível</th>
+          <th class="r">PU saída</th><th class="r">Valor disponível</th>
+        </tr></thead>
+        <tbody>${rows||'<tr><td colspan="7" class="empty">Nenhum produto encontrado.</td></tr>'}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function clientOptions(sel){return S.clients.map(c=>`<option ${c===sel?'selected':''}>${esc(c)}</option>`).join('');}
+function prodOptions(sel){return S.stock.map(s=>`<option value="${esc(s.codigo)}" ${s.codigo===sel?'selected':''}>${esc(s.codigo)} — ${esc(s.produto)}</option>`).join('');}
+
+function viewDistribuir(){
+  const clientsChips = S.clients.length? S.clients.map(c=>`<span class="tag">${esc(c)} <a class="btn ghost mini" data-delc="${esc(c)}" style="padding:0 4px">×</a></span>`).join(' ')
+                                       : '<span class="hint">nenhum cliente ainda</span>';
+  const order={fixo:1,percentual:2,meta:3,igual:4};
+  const rulesSorted=[...S.rules].sort((a,b)=>order[a.tipo]-order[b.tipo]);
+  const ruleHtml=rulesSorted.map(r=>{
+    let k='rk',d='',m='';
+    if(r.tipo==='fixo'){k='rk';d=`<b>${esc(r.cliente)}</b> recebe ${r.pct}% de <span class="code">${esc(r.codigo)}</span>`;m='1 · alocação fixa por produto';}
+    if(r.tipo==='percentual'){k='rk p2';d=`<b>${esc(r.cliente)}</b> recebe ${r.pct}% ${r.scope==='sel'?`de ${r.codigos.length} produto(s)`:'de cada produto'}`;m='2 · percentual';}
+    if(r.tipo==='meta'){k='rk p3';d=`<b>${esc(r.cliente)}</b> — meta ${brl(r.valor)} ${r.scope==='sel'?`(${r.codigos.length} produto(s))`:'(todos com saldo)'}`;m='3 · meta de valor · arredonda pra cima';}
+    if(r.tipo==='igual'){k='rk p4';d=`Divisão do saldo restante entre ${(r.clientes&&r.clientes.length)?r.clientes.length:S.clients.length} cliente(s)`;m=`4 · divisão igual · variação ${r.variacao}`;}
+    return `<div class="rule"><div><span class="${k}">${order[r.tipo]}</span><span class="desc">${d}</span><div class="meta">${m}</div></div><button class="btn mini danger" data-delr="${r.id}">remover</button></div>`;
+  }).join('');
+
+  return `<div class="panel">
+    <div class="head"><div><h2>Clientes</h2><div class="sub">quem vai receber nesta operação</div></div></div>
+    <div class="body">
+      <div class="toolbar"><input id="newClient" placeholder="nome do cliente" style="width:240px"><button class="btn" id="addClient">Adicionar cliente</button></div>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">${clientsChips}</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="head"><div><h2>Regras de distribuição</h2><div class="sub">aplicadas sempre nesta ordem: fixa → percentual → meta → divisão igual</div></div></div>
+    <div class="body">
+      <div class="row-form wide">
+        <div class="field"><label>Tipo de regra</label>
+          <select id="rTipo">
+            <option value="fixo">1 · Produto → cliente (fixa)</option>
+            <option value="percentual">2 · Percentual por produto</option>
+            <option value="meta">3 · Meta de valor</option>
+            <option value="igual">4 · Dividir o restante (igual)</option>
+          </select>
+        </div>
+        <div id="rFields" style="display:contents"></div>
+      </div>
+      <div style="margin-top:12px"><button class="btn primary" id="addRule">Adicionar regra</button></div>
+      <div style="margin-top:16px">${ruleHtml||'<div class="empty">Nenhuma regra ainda. Adicione clientes e monte as regras acima.</div>'}</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="head"><div><h2>Calcular</h2><div class="sub">roda as regras, respeitando o saldo — nunca ultrapassa o disponível</div></div>
+      <button class="btn primary" id="runBtn" ${S.rules.length?'':'disabled'}>Calcular distribuição</button></div>
+    <div class="body"><div class="hint">${S.result?'Distribuição calculada. Veja as abas <b>Resultado</b> e <b>Sobra</b>.':'O que sobrar de cada produto fica na aba Sobra pra você decidir o destino.'}</div></div>
+  </div>`;
+}
+
+function ruleFields(tipo){
+  const cli=`<div class="field"><label>Cliente</label><select id="rCliente">${clientOptions()}</select></div>`;
+  if(tipo==='fixo') return cli+`<div class="field"><label>Produto</label><select id="rCodigo">${prodOptions()}</select></div><div class="field"><label>Percentual</label><input id="rPct" type="number" value="100" min="1" max="100"></div>`;
+  if(tipo==='percentual') return cli+`<div class="field"><label>Percentual de cada produto</label><input id="rPct" type="number" value="50" min="1" max="100"></div>`+scopeField();
+  if(tipo==='meta') return cli+`<div class="field"><label>Valor alvo da nota</label><input id="rValor" type="number" value="5000" min="1" step="100"></div>`+scopeField();
+  if(tipo==='igual') return `<div class="field" style="grid-column:1/-1"><label>Clientes que participam da divisão do restante</label>
+    <div class="pickbox" id="igbox">${S.clients.map(c=>`<label><input type="checkbox" class="igc" value="${esc(c)}" checked> ${esc(c)}</label>`).join('')||'<span class="hint">adicione clientes primeiro</span>'}</div>
+    <label style="margin-top:8px;display:block">Variação entre as notas (nº de trocas de itens — evita notas idênticas)</label><input id="rVar" type="range" min="0" max="40" value="12" oninput="document.getElementById('rVarL').textContent=this.value"> <span class="hint">trocas: <b id="rVarL">12</b></span></div>`;
+  return '';
+}
+function scopeField(){
+  return `<div class="field" style="grid-column:1/-1"><label>Quais produtos</label>
+    <div class="toolbar"><label class="hint"><input type="radio" name="rScope" value="all" checked onchange="toggleScope()"> Todos com saldo</label>
+    <label class="hint"><input type="radio" name="rScope" value="sel" onchange="toggleScope()"> Escolher produtos</label></div>
+    <div id="pickWrap" style="display:none"><div class="pickbox" id="pickbox">${S.stock.map(s=>`<label><input type="checkbox" class="pk" value="${esc(s.codigo)}"> <span class="code">${esc(s.codigo)}</span> ${esc(s.produto)}</label>`).join('')}</div></div>
+  </div>`;
+}
+function toggleScope(){const sel=document.querySelector('input[name=rScope]:checked')?.value; const w=$('#pickWrap'); if(w)w.style.display=sel==='sel'?'block':'none';}
+window.toggleScope=toggleScope;
+
+function viewResultado(){
+  if(!S.result) return `<div class="panel"><div class="body"><div class="empty">Ainda não calculado. Vá em <b>Distribuir</b> e clique em “Calcular distribuição”.</div></div></div>`;
+  const pu=puMap(),prod=prodMap();
+  const clients=Object.keys(S.result.alloc);
+  if(!clients.length) return `<div class="panel"><div class="body"><div class="empty">Nenhum produto foi alocado. Confira as regras.</div></div></div>`;
+  const totals=clients.map(c=>({c,v:clientTotal(c)}));
+  const noteCards=totals.map(t=>`<div class="nb"><div class="cn">${esc(t.c)}</div><div class="cv">${brl(t.v)}</div></div>`).join('');
+  const spread = totals.length>1 ? (Math.max(...totals.map(t=>t.v))-Math.min(...totals.map(t=>t.v))) : 0;
+  const perClient=clients.map(c=>{
+    const a=S.result.alloc[c]; const cods=Object.keys(a).sort();
+    const rows=cods.map(cd=>`<tr><td class="code">${esc(cd)}</td><td class="prod">${esc(prod[cd])}</td><td class="r num">${nf(a[cd])}</td><td class="r num">${brl(pu[cd])}</td><td class="r num">${brl(a[cd]*pu[cd])}</td></tr>`).join('');
+    return `<div class="panel"><div class="head"><div><h2>${esc(c)}</h2><div class="sub">${cods.length} produto(s) na nota</div></div><div class="ledger" style="margin:0"><div class="cell" style="padding:0"><div class="k" style="color:var(--muted)">Total da nota</div><div class="v small" style="color:var(--ink)">${brl(clientTotal(c))}</div></div></div></div>
+      <div class="body tight"><table><thead><tr><th>Código</th><th>Produto</th><th class="r">Qtd</th><th class="r">PU saída</th><th class="r">Valor</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  }).join('');
+  return `<div class="panel"><div class="head"><div><h2>Valor de cada nota</h2><div class="sub">as notas saem com valores diferentes — diferença de ${brl(spread)} entre a maior e a menor</div></div><button class="btn primary" id="expBtn">Exportar .xlsx</button></div>
+    <div class="body"><div class="noteval">${noteCards}</div></div></div>${perClient}`;
+}
+
+function viewSobra(){
+  if(!S.result) return `<div class="panel"><div class="body"><div class="empty">Calcule a distribuição primeiro (aba Distribuir).</div></div></div>`;
+  const pu=puMap(),prod=prodMap();
+  const cods=Object.keys(S.result.leftover).filter(c=>S.result.leftover[c]>0).sort();
+  const val=cods.reduce((s,c)=>s+S.result.leftover[c]*pu[c],0);
+  const rows=cods.map(c=>`<tr><td class="code">${esc(c)}</td><td class="prod">${esc(prod[c])}</td><td class="r num"><span class="chip a">${nf(S.result.leftover[c])}</span></td><td class="r num">${brl(pu[c])}</td><td class="r num">${brl(S.result.leftover[c]*pu[c])}</td></tr>`).join('');
+  const assign = cods.length? `<div class="toolbar" style="margin-top:14px">
+      <span class="hint">Destinar toda a sobra para:</span>
+      <select id="sobraCli"><option value="">— escolher —</option>${clientOptions()}</select>
+      <input id="sobraNew" placeholder="ou novo cliente (ex.: Cliente sobra)" style="width:220px">
+      <button class="btn" id="sobraBtn">Enviar sobra</button>
+    </div><div class="hint" style="margin-top:8px">A sobra só é atribuída quando você confirmar — nada é distribuído automaticamente.</div>`:'';
+  return `<div class="panel">
+    <div class="head"><div><h2>Saldo para utilização</h2><div class="sub">só os produtos que ainda têm saldo — pronto para o cliente de sobra · total ${brl(val)}</div></div>
+      <button class="btn" id="expBtn2">Exportar .xlsx</button></div>
+    <div class="body tight"><table><thead><tr><th>Código</th><th>Produto</th><th class="r">Disponível</th><th class="r">PU saída</th><th class="r">Valor</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="5" class="empty">Nada sobrou — todo o estoque foi distribuído.</td></tr>'}</tbody></table>
+      <div class="body">${assign}</div>
+    </div></div>`;
+}
+
+/* ---------- actions ---------- */
+function addRuleFromForm(){
+  const tipo=$('#rTipo').value; const r={id:uid(),tipo};
+  const cliEl=$('#rCliente');
+  if(tipo!=='igual'){ if(!S.clients.length){alert('Adicione um cliente primeiro.');return;} r.cliente=cliEl.value; }
+  if(tipo==='fixo'){ r.codigo=$('#rCodigo').value; r.pct=clamp($('#rPct').value,1,100); }
+  if(tipo==='percentual'){ r.pct=clamp($('#rPct').value,1,100); readScope(r); }
+  if(tipo==='meta'){ r.valor=Math.max(1,Number($('#rValor').value)||0); readScope(r); }
+  if(tipo==='igual'){ if(!S.clients.length){alert('Adicione clientes primeiro.');return;} r.variacao=Number($('#rVar').value)||0; r.clientes=[...document.querySelectorAll('.igc:checked')].map(x=>x.value); if(!r.clientes.length)r.clientes=S.clients.slice(); }
+  S.rules.push(r); S.result=null; view();
+}
+function clamp(v,a,b){v=Number(v)||0;return Math.min(b,Math.max(a,v));}
+function readScope(r){
+  const sel=document.querySelector('input[name=rScope]:checked')?.value||'all';
+  r.scope=sel;
+  if(sel==='sel'){ r.codigos=[...document.querySelectorAll('.pk:checked')].map(x=>x.value); if(!r.codigos.length){r.scope='all';r.codigos=[];} }
+  else r.codigos=[];
+}
+
+function doExport(){
+  if(!S.result) return;
+  const pu=puMap(),prod=prodMap(),ini=iniMap(),dist=distributedMap();
+  const wb=XLSX.utils.book_new();
+  const cg=[['Código','Produto','Estoque inicial','Distribuído','Disponível','PU saída','Valor disponível']];
+  S.stock.forEach(s=>{const d=dist[s.codigo]||0,disp=s.estoque-d;cg.push([s.codigo,s.produto,s.estoque,d,disp,round4(s.pu),round2(Math.max(0,disp)*s.pu)]);});
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(cg), 'Controle geral');
+  const used=new Set(['Controle geral']);
+  Object.keys(S.result.alloc).forEach(cl=>{
+    const a=S.result.alloc[cl]; const aoa=[['Código','Produto','Quantidade','PU saída','Valor total']]; let tv=0;
+    Object.keys(a).sort().forEach(c=>{const v=a[c]*pu[c];tv+=v;aoa.push([c,prod[c],a[c],round4(pu[c]),round2(v)]);});
+    aoa.push([]); aoa.push(['','','','TOTAL',round2(tv)]);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), sheetName(cl,used));
+  });
+  const cods=Object.keys(S.result.leftover).filter(c=>S.result.leftover[c]>0).sort();
+  const sob=[['Código','Produto','Disponível','PU saída','Valor']];
+  cods.forEach(c=>sob.push([c,prod[c],S.result.leftover[c],round4(pu[c]),round2(S.result.leftover[c]*pu[c])]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sob), 'Sobra');
+  XLSX.writeFile(wb, 'distribuicao_notas.xlsx');
+}
+function round2(n){return Math.round(n*100)/100;} function round4(n){return Math.round(n*10000)/10000;}
+function sheetName(name,used){let base=String(name).replace(/[\\/?*\[\]:]/g,'').slice(0,28)||'Cliente';let n=base,i=2;while(used.has(n)){n=base.slice(0,26)+' '+(i++);}used.add(n);return n;}
+
+function importMaino(file){
+  const rd=new FileReader();
+  rd.onload=e=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
+      if(!rows.length){alert('Planilha vazia.');return;}
+      const keys=Object.keys(rows[0]);
+      const find=(...pats)=>keys.find(k=>pats.some(p=>k.toLowerCase().includes(p)));
+      const kc=find('códig','codig','ref'), kp=find('produt','descri','mercadoria','nome'),
+            kq=find('dispon','qtde','quant','qts','estoque'), ku=find('pu','preç','preco','unit');
+      if(!kc||!kq||!ku){alert('Não encontrei as colunas de código, quantidade e PU. Colunas lidas: '+keys.join(', '));return;}
+      const st=[];
+      rows.forEach(r=>{
+        const cod=String(r[kc]).trim(); if(!cod||cod.toLowerCase()==='nan')return;
+        const q=Math.round(Number(String(r[kq]).replace(',','.'))||0);
+        const p=Number(String(r[ku]).replace(',','.'))||0;
+        let name=kp?String(r[kp]):cod; if(name.includes(' - '))name=name.split(' - ')[0];
+        st.push({codigo:cod,produto:name.trim(),estoque:q,pu:p});
+      });
+      if(!st.length){alert('Nenhuma linha válida encontrada.');return;}
+      S.stock=st; S.rules=[]; S.result=null; view();
+      alert('Estoque atualizado: '+st.length+' produtos.');
+    }catch(err){alert('Não consegui ler o arquivo: '+err.message);}
+  };
+  rd.readAsArrayBuffer(file);
+}
+
+/* ---------- wiring ---------- */
+function wire(){
+  if(S.tab==='estoque'){
+    const f=$('#estFilter'); if(f)f.oninput=e=>{S.stockFilter=e.target.value; const v=$('#view'); v.querySelector('tbody').parentElement.parentElement; view(); const nf2=$('#estFilter'); if(nf2){nf2.focus();nf2.setSelectionRange(nf2.value.length,nf2.value.length);} };
+    const im=$('#impMaino'); if(im)im.onchange=e=>{if(e.target.files[0])importMaino(e.target.files[0]);};
+  }
+  if(S.tab==='distribuir'){
+    const rt=$('#rTipo'); const paint=()=>{$('#rFields').innerHTML=ruleFields(rt.value);};
+    if(rt){rt.onchange=paint; paint();}
+    const ac=$('#addClient'), nc=$('#newClient');
+    if(ac)ac.onclick=()=>{const v=(nc.value||'').trim(); if(!v)return; if(!S.clients.includes(v))S.clients.push(v); S.result=null; view();};
+    if(nc)nc.onkeydown=e=>{if(e.key==='Enter')ac.click();};
+    $('#view').querySelectorAll('[data-delc]').forEach(b=>b.onclick=()=>{S.clients=S.clients.filter(c=>c!==b.dataset.delc); S.rules=S.rules.filter(r=>r.cliente!==b.dataset.delc); S.result=null; view();});
+    $('#view').querySelectorAll('[data-delr]').forEach(b=>b.onclick=()=>{S.rules=S.rules.filter(r=>r.id!==b.dataset.delr); S.result=null; view();});
+    const ar=$('#addRule'); if(ar)ar.onclick=addRuleFromForm;
+    const rb=$('#runBtn'); if(rb)rb.onclick=()=>{compute(); S.tab='resultado'; setActiveTab(); view();};
+  }
+  if(S.tab==='resultado'){ const e=$('#expBtn'); if(e)e.onclick=doExport; }
+  if(S.tab==='sobra'){
+    const e=$('#expBtn2'); if(e)e.onclick=doExport;
+    const sb=$('#sobraBtn'); if(sb)sb.onclick=()=>{
+      const nw=($('#sobraNew').value||'').trim(); const cl=nw||$('#sobraCli').value;
+      if(!cl){alert('Escolha ou digite um cliente.');return;}
+      if(!S.clients.includes(cl))S.clients.push(cl);
+      if(!S.result.alloc[cl])S.result.alloc[cl]={};
+      for(const c in S.result.leftover){S.result.alloc[cl][c]=(S.result.alloc[cl][c]||0)+S.result.leftover[c];}
+      S.result.leftover={}; for(const c in S.result.availFinal)S.result.availFinal[c]=0;
+      view();
+    };
+  }
+}
+function setActiveTab(){document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.t===S.tab));}
+$('#tabs').addEventListener('click',e=>{const b=e.target.closest('.tab'); if(!b)return; S.tab=b.dataset.t; setActiveTab(); view();});
+
+view();
+</script>

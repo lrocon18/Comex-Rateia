@@ -1,0 +1,155 @@
+@import 'tailwindcss';
+
+/* Fontes empacotadas: nada sai da máquina, então nada entra — zero CDN (doc 06). */
+@import '@fontsource-variable/inter/wght.css';
+@import '@fontsource-variable/jetbrains-mono/wght.css';
+@import '@fontsource/instrument-serif/latin-400.css';
+
+/* Direção de arte em reference/docs/06-direcao-de-arte.md.
+   Papel, tinta e uma cor de carimbo. Cor é sinal, não enfeite. */
+@theme inline {
+  --color-paper: hsl(40 20% 97.5%);
+  --color-surface: hsl(0 0% 100%);
+  --color-sunken: hsl(40 14% 95%);
+  --color-ink: hsl(215 25% 11%);
+  --color-graphite: hsl(215 12% 42%);
+  --color-graphite-light: hsl(215 10% 54%);
+  --color-rule: hsl(40 10% 88%);
+  --color-rule-strong: hsl(40 8% 80%);
+
+  --color-dock: hsl(176 45% 24%);
+  --color-dock-strong: hsl(176 50% 18%);
+  --color-dock-wash: hsl(176 35% 95%);
+  --color-dock-rule: hsl(176 25% 78%);
+
+  --color-signal-ok: hsl(151 45% 30%);
+  --color-signal-ok-wash: hsl(151 40% 95%);
+  --color-signal-warn: hsl(35 65% 32%);
+  --color-signal-warn-wash: hsl(40 70% 95%);
+  --color-signal-risk: hsl(2 55% 42%);
+  --color-signal-risk-wash: hsl(2 60% 96%);
+
+  /* compatibilidade com os primitivos no estilo shadcn */
+  --color-background: var(--color-paper);
+  --color-foreground: var(--color-ink);
+  --color-card: var(--color-surface);
+  --color-card-foreground: var(--color-ink);
+  --color-primary: var(--color-dock);
+  --color-primary-foreground: hsl(40 20% 98%);
+  --color-secondary: var(--color-sunken);
+  --color-secondary-foreground: var(--color-ink);
+  --color-muted: var(--color-sunken);
+  --color-muted-foreground: var(--color-graphite);
+  --color-accent: var(--color-sunken);
+  --color-accent-foreground: var(--color-ink);
+  --color-destructive: var(--color-signal-risk);
+  --color-destructive-foreground: hsl(40 20% 98%);
+  --color-border: var(--color-rule);
+  --color-input: var(--color-rule-strong);
+  --color-ring: var(--color-dock);
+
+  --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Mono', monospace;
+  --font-serif: 'Instrument Serif', 'Iowan Old Style', Georgia, serif;
+
+  /* papel cortado, não bolha */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+
+  --shadow-float: 0 24px 60px -20px hsl(215 25% 11% / 0.28);
+}
+
+* {
+  border-color: var(--color-rule);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Números: tabulares e alinhados, para a coluna não balançar (doc 06 §1).
+   Sem tracking negativo — algarismo tabular já tem avanço fixo, apertar mais
+   só deixa o número achatado. */
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Identificadores que a operadora compara caractere por caractere. */
+.code {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-variant-ligatures: none;
+  white-space: nowrap;
+}
+
+/* Rótulo de campo e de coluna: pequeno, espaçado, grafite. */
+.label-xs {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-graphite);
+}
+
+/* Instrument Serif já é estreita e de x-altura alta: tracking negativo fecha as
+   contraformas e o texto parece amassado. */
+.serif {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: 0.005em;
+}
+
+/* Seletor nativo com a mesma casca dos campos, sem a seta do sistema. */
+.select-field {
+  appearance: none;
+  height: 2.25rem;
+  padding: 0 1.75rem 0 0.625rem;
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius-md);
+  background-color: var(--color-surface);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235a6472' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  color: var(--color-ink);
+  font-family: inherit;
+  font-size: 0.875rem;
+  line-height: 1;
+  transition: border-color 150ms;
+}
+
+.select-field:hover {
+  border-color: var(--color-graphite-light);
+}
+
+.select-field:disabled {
+  background-color: var(--color-sunken);
+  opacity: 0.6;
+}
+
+/* Foco sempre visível: o fluxo é de teclado e planilha (doc 06). */
+:focus-visible {
+  outline: 2px solid var(--color-dock);
+  outline-offset: 1px;
+}
+
+::selection {
+  background: var(--color-dock-wash);
+}
+
+input[type='range'] {
+  accent-color: var(--color-dock);
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--color-dock);
+  width: 0.875rem;
+  height: 0.875rem;
+}
