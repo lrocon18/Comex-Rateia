@@ -43,7 +43,13 @@ export function produtosFromRows(rows: Record<string, unknown>[]): MainoImport {
     const q = parseDecimal(r[kq]) || 0;
     const p = Number(String(r[ku] ?? '').replace(',', '.')) || 0;
     const nome = kp ? cleanMainoName(String(r[kp] ?? ''), cod) : cod;
-    produtos.push({ codigo: cod, produto: nome, estoque: q, pu: p });
+    produtos.push({
+      codigo: cod,
+      produto: nome,
+      estoque: q,
+      pu: p,
+      origemQuebrada: !Number.isInteger(q),
+    });
   }
   if (!produtos.length) throw new Error('Nenhuma linha válida encontrada.');
   return { produtos, colunas: { codigo: kc, produto: kp, quantidade: kq, pu: ku } };

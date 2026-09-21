@@ -38,6 +38,9 @@ export function DistribuirTab() {
   const calculate = useAppStore((s) => s.calculate);
   const novo = useAppStore((s) => s.drafts.novoCliente);
   const patchDrafts = useAppStore((s) => s.patchDrafts);
+  const temPedido = useAppStore(
+    (s) => s.drafts.pedidos?.some((d) => d.itens.some((i) => i.produto)) ?? false,
+  );
 
   const sorted = [...rules].sort((a, b) => ORDER[a.tipo] - ORDER[b.tipo]);
 
@@ -139,7 +142,7 @@ export function DistribuirTab() {
               saldo, nunca ultrapassa o disponível
             </CardDescription>
           </div>
-          <Button size="lg" onClick={calculate} disabled={rules.length === 0}>
+          <Button size="lg" onClick={calculate} disabled={rules.length === 0 && !temPedido}>
             Distribuir pedidos
           </Button>
         </CardHeader>

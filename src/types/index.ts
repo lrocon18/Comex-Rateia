@@ -7,6 +7,8 @@ export interface Produto {
   produto: string; // descrição (nome limpo)
   estoque: number; // quantidade inicial
   pu: number; // PU de saída (R$)
+  /** true quando a quantidade importada da origem já vinha decimal (ex.: 1,6). */
+  origemQuebrada?: boolean;
 }
 
 export type RegraTipo = 'fixo' | 'quantidade' | 'percentual' | 'meta' | 'igual';
@@ -75,10 +77,20 @@ export type Alloc = Record<string, Record<string, number>>;
 /** Saldo por código. */
 export type Saldo = Record<string, number>;
 
+/** Relatório da nota de um cliente após o rateio. */
+export interface ClienteNota {
+  solicitado: number;
+  valor: number;
+  diferenca: number;
+  diferencaPct: number;
+  cnpj?: string;
+}
+
 export interface Result {
   alloc: Alloc;
   leftover: Saldo; // saldo > 0 ao final (sobra, sem destino automático)
   availFinal: Saldo; // saldo por código após todas as regras
+  notas?: Record<string, ClienteNota>;
 }
 
 // ---- Import da planilha do cliente (io) ----

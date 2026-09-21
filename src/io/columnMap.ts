@@ -4,13 +4,30 @@
 
 export type Campo = 'codigo' | 'produto' | 'quantidade' | 'pu';
 
+export type CampoExport = Campo | 'cliente' | 'cnpj';
+
 /** Sinônimos conhecidos (doc 03) — normalizados (minúsculo, sem acento). */
 export const SYNONYMS: Record<Campo, string[]> = {
-  codigo: ['codigo', 'código', 'cod', 'ref', 'ref. mercadoria', 'ref mercadoria', 'referencia do produto', 'referência do produto', 'referencia'],
-  produto: ['produto', 'descricao', 'descrição', 'mercadoria', 'nome'],
+  codigo: ['codigo', 'código', 'cod', 'ref', 'ref. mercadoria', 'ref mercadoria', 'referencia do produto', 'referência do produto', 'referencia', 'referencia do produto'],
+  produto: ['produto', 'descricao', 'descrição', 'mercadoria'],
   quantidade: ['qts', 'qtde disponivel', 'qtde disponível', 'quantidade', 'disponivel', 'disponível', 'estoque', 'qtd', 'qtde'],
-  pu: ['pu saida', 'pu saída', 'pu', 'preco', 'preço', 'valor unit', 'preco unit', 'preço unit'],
+  pu: ['pu saida', 'pu saída', 'pu', 'preco', 'preço', 'valor unit', 'preco unit', 'preço unit', 'valor unitario', 'valor unitário'],
 };
+
+export const SYNONYMS_EXPORT: Record<CampoExport, string[]> = {
+  ...SYNONYMS,
+  cliente: ['cliente', 'razao social', 'razão social', 'nome do cliente'],
+  cnpj: ['cnpj'],
+};
+
+export const CAMPOS_EXPORT: { campo: CampoExport; label: string; obrigatorio: boolean }[] = [
+  { campo: 'codigo', label: 'Código / referência', obrigatorio: true },
+  { campo: 'quantidade', label: 'Quantidade distribuída', obrigatorio: true },
+  { campo: 'pu', label: 'Valor unitário', obrigatorio: false },
+  { campo: 'produto', label: 'Descrição', obrigatorio: false },
+  { campo: 'cliente', label: 'Cliente', obrigatorio: false },
+  { campo: 'cnpj', label: 'CNPJ', obrigatorio: false },
+];
 
 export function normalizeHeader(s: unknown): string {
   return String(s ?? '')
@@ -64,5 +81,41 @@ export function detectColumns(headers: string[], campos: Campo[]): ColMapResult 
     }
   }
 
+  return { map, uncertain, headers };
+}
+
+function pickHeader(norm: string[], used: Set<number>, syns: string[]): number {
+  for (let i = 0; i < norm.length; i++) {
+    if (used.has(i)) continue;
+    if (syns.includes(norm[i])) return i;
+  }
+  for (let i = 0; i < norm.length; i++) {
+    if (used.has(i)) continue;
+    if (syns.some((s) => norm[i].includes(s) || (s.length > 2 && s.includes(norm[i]) && norm[i].length > 2)))
+      return i;
+  }
+  return -1;
+}
+
+/** Mapeia cabeçalhos do molde de exportação (inclui cliente/CNPJ). */
+export function detectExportColumns(headers: string[]): {
+  map: Partial<Record<CampoExport, string>>;
+  uncertain: CampoExport[];
+  headers: string[];
+} {
+  const norm = headers.map(normalizeHeader);
+  const used = new Set<number>();
+  const map: Partial<Record<CampoExport, string>> = {};
+  const uncertain: CampoExport[] = [];
+  const ordem: CampoExport[] = ['codigo', 'quantidade', 'pu', 'cliente', 'cnpj', 'produto'];
+  for (const campo of ordem) {
+    const idx = pickHeader(norm, used, SYNONYMS_EXPORT[campo]);
+    if (idx >= 0) {
+      used.add(idx);
+      map[campo] = headers[idx];
+    } else if (CAMPOS_EXPORT.find((c) => c.campo === campo)?.obrigatorio) {
+      uncertain.push(campo);
+    }
+  }
   return { map, uncertain, headers };
 }

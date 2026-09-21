@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { compute } from '@/engine';
-import type { MatchItem, MatchVia, Row, SheetParse } from '@/io';
+import type { ExportMolde, MatchItem, MatchVia, Row, SheetParse } from '@/io';
 import type { Escopo, PedidoCliente, Produto, Regra, RegraInput, RegraTipo, Result, ValorAlvoUnidade } from '@/types';
 import {
   loadCurrent,
@@ -74,6 +74,8 @@ export interface Drafts {
   novoCliente: string;
   sobraDestino: string;
   sobraNovoCliente: string;
+  /** Molde oficial enviado pela operadora para a exportação em um arquivo. */
+  exportMolde: ExportMolde | null;
 }
 
 const REGRA_VAZIA: RegraDraft = {
@@ -97,6 +99,7 @@ const DRAFTS_VAZIOS: Drafts = {
   novoCliente: '',
   sobraDestino: '',
   sobraNovoCliente: '',
+  exportMolde: null,
 };
 
 interface AppState {
@@ -133,6 +136,39 @@ interface AppState {
   newOperation: () => void;
   saveAs: (name: string) => Promise<void>;
   openOperation: (id: number) => Promise<void>;
+}
+
+function regrasDoPedido(pedidos: PedidoDraft[]): { clients: string[]; rules: Regra[] } {
+  const clients: string[] = [];
+  const rules: Regra[] = [];
+  for (const d of pedidos) {
+    if (!d.itens.some((i) => i.produto)) continue;
+    const nome = d.pedido.nome.trim() || d.pedido.aba;
+    if (!clients.includes(nome)) clients.push(nome);
+    const codigos = [...new Set(d.itens.filter((i) => i.produto).map((i) => i.produto!.codigo))];
+    if (d.valorAlvo == null || !codigos.length) continue;
+    if (d.valorAlvoUnidade === 'pct') {
+      rules.push({
+        id: uid(),
+        tipo: 'percentual',
+        cliente: nome,
+        pct: d.valorAlvo,
+        scope: 'sel',
+        codigos,
+      });
+    } else {
+      rules.push({
+        id: uid(),
+        tipo: 'meta',
+        cliente: nome,
+        valor: d.valorAlvo,
+        scope: 'sel',
+        codigos,
+        tetoReal: false,
+      });
+    }
+  }
+  return { clients, rules };
 }
 
 function snapshot(s: AppState): OperationSnapshot {
@@ -231,8 +267,24 @@ export const useAppStore = create<AppState>((set, get) => ({
   removeRule: (id) => set((s) => ({ rules: s.rules.filter((r) => r.id !== id), result: null })),
 
   calculate: () => {
-    const { stock, clients, rules } = get();
-    set({ result: compute(stock, clients, rules), tab: 'resultado' });
+    const s = get();
+    const pedidos = s.drafts.pedidos?.filter((d) => d.itens.some((i) => i.produto)) ?? null;
+    let clients = s.clients;
+    let rules = s.rules;
+    if (pedidos?.length) {
+      const auto = regrasDoPedido(pedidos);
+      const manuais = s.rules.filter((r) => r.tipo === 'igual' || r.tipo === 'fixo' || r.tipo === 'quantidade');
+      clients = [...new Set([...auto.clients, ...s.clients])];
+      rules = [...auto.rules, ...manuais];
+    }
+    const result = compute(s.stock, clients, rules);
+    if (pedidos && result.notas) {
+      for (const d of pedidos) {
+        const nome = d.pedido.nome.trim() || d.pedido.aba;
+        if (result.notas[nome]) result.notas[nome].cnpj = d.pedido.cnpj;
+      }
+    }
+    set({ clients, rules, result, tab: 'resultado' });
   },
 
   assignLeftover: (cliente) =>

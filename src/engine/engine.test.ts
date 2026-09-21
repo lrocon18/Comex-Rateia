@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import type { Produto, Regra } from '@/types';
 import { compute } from './distribute';
-import { metaFill } from './meta';
+import { distribuirPedido, metaFill } from './meta';
+import { quantidadePermitida, quantidadesPermitidas } from './granularity';
 import { splitEqual } from './equal';
 import { distributedMap } from './selectors';
 import mainoRaw from '@/fixtures/maino.json';
@@ -88,33 +89,56 @@ describe('splitEqual — invariante 5 (conservação por produto)', () => {
   });
 });
 
-describe('metaFill — doc 04 §3 / doc 06 D2', () => {
-  it('alvo R$ 5.000 fecha em R$ 5.000,43 (validado no protótipo)', () => {
-    const avail = Object.fromEntries(MAINO.map((s) => [s.codigo, s.estoque]));
-    const { value } = metaFill(
-      MAINO.map((s) => s.codigo),
-      avail,
-      puOf(MAINO),
-      5000,
-    );
-    expect(Number(value.toFixed(2))).toBe(5000.43);
+describe('metaFill — orçamento sobre o conjunto inteiro', () => {
+  it('rateia o alvo por todos os produtos, não escolhe um subconjunto até somar o valor', () => {
+    // 10 SKUs × 100 un. × R$ 10 = R$ 10.000. Alvo R$ 4.500 → 45% de cada um.
+    const codigos = Array.from({ length: 10 }, (_, i) => `P${i}`);
+    const avail = Object.fromEntries(codigos.map((c) => [c, 100]));
+    const pu = Object.fromEntries(codigos.map((c) => [c, 10]));
+    const { take, value } = metaFill(codigos, avail, pu, 4500);
+
+    const usados = codigos.filter((c) => (take[c] || 0) > 0);
+    expect(usados).toHaveLength(10);
+    for (const c of codigos) expect(take[c]).toBe(45);
+    expect(value).toBe(4500);
   });
 
-  it('alvo R$ 10.000 fecha em R$ 10.000,17 (validado no protótipo)', () => {
-    const avail = Object.fromEntries(MAINO.map((s) => [s.codigo, s.estoque]));
-    const { value } = metaFill(
-      MAINO.map((s) => s.codigo),
-      avail,
-      puOf(MAINO),
-      10000,
-    );
-    expect(Number(value.toFixed(2))).toBe(10000.17);
+  it('alvo R$ 45 mil em conjunto de 71 itens usa todos, não só os mais caros', () => {
+    const n = 71;
+    const codigos = Array.from({ length: n }, (_, i) => `C${i}`);
+    const avail = Object.fromEntries(codigos.map((c) => [c, 20]));
+    const pu = Object.fromEntries(codigos.map((c, i) => [c, i < 12 ? 200 : 20]));
+
+    const { take, value, solicitado } = metaFill(codigos, avail, pu, 45000);
+    const usados = codigos.filter((c) => (take[c] || 0) > 0);
+    expect(usados.length).toBe(n);
+    expect(Math.abs(value - solicitado)).toBeLessThan(200);
+    for (const c of codigos) expect(Number.isInteger(take[c])).toBe(true);
   });
 
-  it('overshoot: value >= alvo quando o estoque alcança', () => {
-    const avail = Object.fromEntries(MAINO.map((s) => [s.codigo, s.estoque]));
-    const { value } = metaFill(MAINO.map((s) => s.codigo), avail, puOf(MAINO), 5000);
-    expect(value).toBeGreaterThanOrEqual(5000);
+  it('quando o valor exato é inatingível, fica no mais próximo permitido (não inventa decimal)', () => {
+    // PU 3: 10 não é múltiplo. 9 fica a 1, 12 a 2 → escolhe 9.
+    const { take, value } = metaFill(['A'], { A: 10 }, { A: 3 }, 10);
+    expect(take.A).toBe(3);
+    expect(value).toBe(9);
+    expect(Number.isInteger(take.A)).toBe(true);
+  });
+
+  it('pedido por percentual aplica a fração em cada item do conjunto', () => {
+    const codigos = ['A', 'B', 'C'];
+    const avail = { A: 100, B: 100, C: 100 };
+    const pu = { A: 10, B: 10, C: 10 };
+    const { take, value, solicitado } = distribuirPedido({
+      codigos,
+      avail,
+      pu,
+      pct: 45,
+    });
+    expect(solicitado).toBe(1350);
+    expect(value).toBe(1350);
+    expect(take.A).toBe(45);
+    expect(take.B).toBe(45);
+    expect(take.C).toBe(45);
   });
 
   it('produto caro sem estoque: pega tudo e fica abaixo (não força)', () => {
@@ -139,26 +163,42 @@ describe('metaFill — doc 04 §3 / doc 06 D2', () => {
   });
 });
 
-describe('metaFill — exceção de origem fracionária (doc 04)', () => {
-  it('produto com origem quebrada: leva tudo quando cabe no alvo (nunca uma fatia)', () => {
-    const avail = { A: 1.6, B: 10 };
-    const pu = { A: 100, B: 10 };
-    const { take, value } = metaFill(['A', 'B'], avail, pu, 260, { A: false, B: true });
-    expect(take.A).toBe(1.6); // parcela indivisível, inteira
-    expect(Number.isInteger(take.B)).toBe(true); // origem inteira nunca quebra
-    expect(value).toBeCloseTo(1.6 * 100 + take.B * 10, 6);
+describe('granularidade da origem', () => {
+  it('origem inteira só admite inteiros até o disponível', () => {
+    expect(quantidadesPermitidas(4, false)).toEqual([0, 1, 2, 3, 4]);
   });
 
-  it('produto com origem quebrada não cabendo no alvo: fica de fora do passo 1 (não fatia pra caber)', () => {
-    const avail = { A: 1.6 };
-    const pu = { A: 100 };
-    // alvo bem menor que o valor da parcela inteira (160): não pode pegar um pedaço dela no passo 1
-    const semOvershoot = metaFill(['A'], avail, pu, 50, { A: false }, true);
-    expect(semOvershoot.take.A ?? 0).toBe(0);
-    expect(semOvershoot.value).toBe(0);
-    // com overshoot permitido, a parcela inteira pode ser usada pra passar da meta (não fatiada)
-    const comOvershoot = metaFill(['A'], avail, pu, 50, { A: false }, false);
-    expect(comOvershoot.take.A).toBe(1.6);
+  it('origem 1,6 admite 0, 1 e 1,6 — nunca 0,3', () => {
+    expect(quantidadesPermitidas(1.6, true)).toEqual([0, 1, 1.6]);
+    expect(quantidadePermitida(0.3, 1.6, true)).toBe(false);
+    expect(quantidadePermitida(1.6, 1.6, true)).toBe(true);
+  });
+});
+
+describe('metaFill — origem quebrada', () => {
+  it('100% do item com 1,6 na origem distribui 1,6', () => {
+    const { take, value } = distribuirPedido({
+      codigos: ['A'],
+      avail: { A: 1.6 },
+      pu: { A: 100 },
+      origemQuebrada: { A: true },
+      pct: 100,
+    });
+    expect(take.A).toBe(1.6);
+    expect(value).toBeCloseTo(160, 6);
+  });
+
+  it('pode usar a parte inteira (1) da origem 1,6, nunca um decimal novo', () => {
+    const { take } = metaFill(['A', 'B'], { A: 1.6, B: 10 }, { A: 100, B: 10 }, 260, { A: false, B: true });
+    expect(take.A === undefined || take.A === 0 || take.A === 1 || take.A === 1.6).toBe(true);
+    expect(Number.isInteger(take.B)).toBe(true);
+    if (take.A != null && take.A !== 1.6) expect(Number.isInteger(take.A)).toBe(true);
+  });
+
+  it('alvo pequeno não inventa 0,5 de um item de R$ 100', () => {
+    const { take, value } = metaFill(['A'], { A: 1.6 }, { A: 100 }, 50, { A: false }, true);
+    expect(take.A ?? 0).toBe(0);
+    expect(value).toBe(0);
   });
 
   it('nunca gera uma quantidade quebrada nova quando a origem é inteira', () => {
@@ -216,8 +256,11 @@ describe('compute — exceção de origem fracionária (doc 04)', () => {
     ];
     const rules: Regra[] = [{ id: '1', tipo: 'meta', cliente: 'G', valor: 500, scope: 'all', codigos: [], tetoReal: false }];
     const r = compute(stock, ['G'], rules, mulberry32(1));
-    // A (origem quebrada) ou não aparece, ou aparece com o valor exato 1.6 — nunca uma fatia
-    if (r.alloc['G']['A'] != null) expect(r.alloc['G']['A']).toBe(1.6);
+    const q = r.alloc['G']['A'];
+    if (q != null) {
+      expect(q === 1.6 || Number.isInteger(q)).toBe(true);
+      expect(q).toBeLessThanOrEqual(1.6);
+    }
     expect(Number.isInteger(r.alloc['G']['B'])).toBe(true);
   });
 

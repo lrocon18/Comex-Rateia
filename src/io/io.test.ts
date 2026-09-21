@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import * as XLSX from 'xlsx';
 import type { Produto } from '@/types';
 import { normalizeValor, parseDecimal, parseValorAlvoCelula } from './normalizeValue';
-import { detectColumns } from './columnMap';
+import { detectColumns, detectExportColumns } from './columnMap';
+import { avisosMapeamento, buildPedidosWorkbook, type ExportMolde } from './exportTemplate';
 import { subCodes, matchPedido, buildCodeIndex } from './matching';
 import { normalizeCnpj, parseSheet, parseSheetToPedido, pedidosFromWorkbook } from './importCliente';
 import { cleanMainoName, produtosFromRows } from './importMaino';
@@ -78,6 +79,32 @@ describe('detectColumns — sinônimos', () => {
   });
 });
 
+describe('detectExportColumns — molde de exportação', () => {
+  it('mapeia código, quantidade, PU, cliente e CNPJ', () => {
+    const { map, uncertain } = detectExportColumns([
+      'Código',
+      'Quantidade',
+      'Valor unitário',
+      'Cliente',
+      'CNPJ',
+      'Descrição',
+    ]);
+    expect(map.codigo).toBe('Código');
+    expect(map.quantidade).toBe('Quantidade');
+    expect(map.pu).toBe('Valor unitário');
+    expect(map.cliente).toBe('Cliente');
+    expect(map.cnpj).toBe('CNPJ');
+    expect(map.produto).toBe('Descrição');
+    expect(uncertain).toEqual([]);
+  });
+
+  it('avisa código e quantidade obrigatórios sem origem', () => {
+    const { uncertain } = detectExportColumns(['NCM', 'Observação']);
+    expect(uncertain).toEqual(expect.arrayContaining(['codigo', 'quantidade']));
+    expect(avisosMapeamento({})).toHaveLength(2);
+  });
+});
+
 describe('cleanMainoName', () => {
   it('corta em " - " e remove código repetido', () => {
     expect(cleanMainoName('WM2-37 Tubo de aluminio - WM2-37 tubo', 'WM2-37')).toBe('Tubo de aluminio');
@@ -92,7 +119,13 @@ describe('produtosFromRows — import Maino', () => {
     ];
     const { produtos } = produtosFromRows(rows);
     expect(produtos).toHaveLength(2);
-    expect(produtos[0]).toMatchObject({ codigo: '46025', produto: 'Disco', estoque: 600, pu: 1.2193 });
+    expect(produtos[0]).toMatchObject({
+      codigo: '46025',
+      produto: 'Disco',
+      estoque: 600,
+      pu: 1.2193,
+      origemQuebrada: false,
+    });
     expect(produtos[1]).toMatchObject({ codigo: 'WM1-51', estoque: 480, pu: 5.5863 });
   });
 
@@ -102,6 +135,7 @@ describe('produtosFromRows — import Maino', () => {
     ];
     const { produtos } = produtosFromRows(rows);
     expect(produtos[0].estoque).toBeCloseTo(155.6, 4);
+    expect(produtos[0].origemQuebrada).toBe(true);
   });
 });
 
@@ -356,5 +390,81 @@ describe('pedidosFromWorkbook + matchPedido — integração com a fixture real'
 
     const sg = pedidos.find((p) => p.aba === 'SG')!;
     expect(sg.valorAlvo).toBe(15000);
+  });
+});
+
+describe('buildPedidosWorkbook — um arquivo, aba por cliente', () => {
+  const aoa = [
+    ['Pedido'],
+    [],
+    ['', '', 0],
+    [],
+    ['Código', 'Quantidade', 'PU', 'Descrição', 'Cliente', 'CNPJ', 'NCM'],
+    ['', '', '', '', '', '', 'NCM-KEEP'],
+  ];
+
+  function moldeDeAoa(): ExportMolde {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Modelo');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['extra']]), 'Instrucoes');
+    const raw = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
+    const bytes = Array.from(new Uint8Array(raw));
+    const headers = aoa[4] as string[];
+    const { map } = detectExportColumns(headers);
+    return {
+      bytes,
+      fileName: 'molde.xlsx',
+      headers,
+      headerIdx: 4,
+      map,
+      avisos: avisosMapeamento(map),
+    };
+  }
+
+  const stock: Produto[] = [
+    { codigo: 'A-1', produto: 'peça a', estoque: 10, pu: 2 },
+    { codigo: 'A-2', produto: 'peça b', estoque: 5, pu: 3 },
+  ];
+
+  it('clona o modelo em uma aba por cliente e não preenche coluna sem origem', async () => {
+    const molde = moldeDeAoa();
+    expect(molde.avisos).toEqual([]);
+    const wb = await buildPedidosWorkbook(molde, stock, {
+      alloc: {
+        ACME: { 'A-1': 2, 'A-2': 1 },
+        Beta: { 'A-1': 1 },
+      },
+      leftover: {},
+      availFinal: {},
+      notas: {
+        ACME: { solicitado: 10, valor: 7, diferenca: -3, diferencaPct: -0.3, cnpj: '12.345.678/0001-90' },
+        Beta: { solicitado: 2, valor: 2, diferenca: 0, diferencaPct: 0, cnpj: '' },
+      },
+    });
+
+    expect(wb.SheetNames[0]).toBe('ACME');
+    expect(wb.SheetNames[1]).toBe('Beta');
+    expect(wb.SheetNames).toContain('Instrucoes');
+    const acme = wb.Sheets.ACME;
+    expect(acme.A3.v).toBe('ACME');
+    expect(acme.C3.v).toBe(7);
+    expect(acme.A6.v).toBe('A-1');
+    expect(acme.B6.v).toBe(2);
+    expect(acme.C6.v).toBe(2);
+    expect(acme.D6.v).toBe('peça a');
+    expect(acme.E6.v).toBe('ACME');
+    expect(acme.F6.v).toBe('12.345.678/0001-90');
+    expect(acme.G6.v).toBe('NCM-KEEP');
+    expect(acme.A7.v).toBe('A-2');
+    expect(acme.B7.v).toBe(1);
+
+    expect(wb.Sheets.Beta.A3.v).toBe('Beta');
+    expect(wb.Sheets.Beta.A6.v).toBe('A-1');
+    expect(wb.Sheets.Beta.B6.v).toBe(1);
+  });
+
+  it('não exporta se código ou quantidade ficarem sem coluna', () => {
+    expect(avisosMapeamento({ pu: 'PU' }).join(' ')).toMatch(/Código/);
+    expect(avisosMapeamento({ pu: 'PU' }).join(' ')).toMatch(/Quantidade/);
   });
 });

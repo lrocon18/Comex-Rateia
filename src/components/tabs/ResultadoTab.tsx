@@ -1,10 +1,21 @@
+import { useRef, useState } from 'react';
 import { useAppStore } from '@/store/useAppStore';
 import { clientTotal, prodMap, puMap } from '@/engine';
-import { exportClientesPorTemplate, exportXlsx } from '@/io';
+import { isOrigemQuebrada } from '@/engine/granularity';
+import {
+  CAMPOS_EXPORT,
+  comMapaMolde,
+  exportarPlanilhaMolde,
+  exportXlsx,
+  lerMoldeExportacao,
+  type CampoExport,
+} from '@/io';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Select } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { formatCurrency, formatCurrency4, formatInteger, formatQuantity } from '@/lib/utils';
+import { formatCurrency, formatCurrency4, formatInteger, formatPercent, formatQuantity } from '@/lib/utils';
 
 function Vazio({ children }: { children: React.ReactNode }) {
   return (
@@ -18,6 +29,12 @@ export function ResultadoTab() {
   const stock = useAppStore((s) => s.stock);
   const result = useAppStore((s) => s.result);
   const setTab = useAppStore((s) => s.setTab);
+  const molde = useAppStore((s) => s.drafts.exportMolde);
+  const patchDrafts = useAppStore((s) => s.patchDrafts);
+  const origem = Object.fromEntries(stock.map((s) => [s.codigo, isOrigemQuebrada(s.estoque, s.origemQuebrada)]));
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [moldeErro, setMoldeErro] = useState<string | null>(null);
+  const [exportando, setExportando] = useState(false);
 
   if (!result) {
     return (
@@ -41,6 +58,38 @@ export function ResultadoTab() {
   const prod = prodMap(stock);
   const totals = clients.map((c) => ({ c, v: clientTotal(stock, result, c) }));
   const spread = totals.length > 1 ? Math.max(...totals.map((t) => t.v)) - Math.min(...totals.map((t) => t.v)) : 0;
+  const podeExportar = !!molde && molde.avisos.length === 0;
+
+  const onMolde = async (file: File) => {
+    setMoldeErro(null);
+    try {
+      patchDrafts({ exportMolde: await lerMoldeExportacao(file) });
+    } catch (e) {
+      setMoldeErro(e instanceof Error ? e.message : 'Não foi possível ler o molde.');
+      patchDrafts({ exportMolde: null });
+    }
+  };
+
+  const setCampo = (campo: CampoExport, header: string) => {
+    if (!molde) return;
+    const map = { ...molde.map };
+    if (header) map[campo] = header;
+    else delete map[campo];
+    patchDrafts({ exportMolde: comMapaMolde(molde, map) });
+  };
+
+  const onExportar = async () => {
+    if (!molde) return;
+    setMoldeErro(null);
+    setExportando(true);
+    try {
+      await exportarPlanilhaMolde(molde, stock, result);
+    } catch (e) {
+      setMoldeErro(e instanceof Error ? e.message : 'Falha ao exportar.');
+    } finally {
+      setExportando(false);
+    }
+  };
 
   return (
     <div className="mt-5 space-y-5">
@@ -52,44 +101,145 @@ export function ResultadoTab() {
               as notas saem propositalmente diferentes — {formatCurrency(spread)} entre a maior e a menor
             </CardDescription>
           </div>
+          <Button variant="outline" onClick={() => void exportXlsx(stock, result)}>
+            Exportar controle geral
+          </Button>
+        </CardHeader>
+        <div className="flex flex-wrap overflow-hidden">
+          {totals.map((t) => {
+            const nota = result.notas?.[t.c];
+            return (
+              <div
+                key={t.c}
+                className="-mt-px -ml-px min-w-[200px] flex-1 border-t border-l border-[var(--color-rule)] px-4 py-3"
+              >
+                <div className="truncate text-xs text-[var(--color-graphite)]" title={t.c}>
+                  {t.c}
+                </div>
+                <div className="num mt-0.5 text-[1.0625rem] font-semibold leading-[1.3]">{formatCurrency(t.v)}</div>
+                {nota && (
+                  <div className="mt-1 space-y-0.5 text-[0.6875rem] text-[var(--color-graphite)]">
+                    <div>solicitado {formatCurrency(nota.solicitado)}</div>
+                    <div>
+                      diff {formatCurrency(nota.diferenca)} ({formatPercent(nota.diferencaPct)})
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
+          <div className="space-y-1">
+            <CardTitle>Exportar planilha</CardTitle>
+            <CardDescription>
+              um arquivo, uma aba por cliente, no molde oficial — envie o modelo e confira o mapeamento
+            </CardDescription>
+          </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => void exportXlsx(stock, result)}>
-              Exportar controle geral
+            <Button variant="outline" onClick={() => fileInput.current?.click()}>
+              {molde ? 'Trocar molde' : 'Enviar molde'}
             </Button>
-            <Button onClick={() => void exportClientesPorTemplate(stock, result)}>
-              Exportar planilha (modelo do cliente)
+            <Button disabled={!podeExportar || exportando} onClick={() => void onExportar()}>
+              {exportando ? 'Exportando…' : 'Exportar planilha'}
             </Button>
+            <input
+              ref={fileInput}
+              type="file"
+              accept=".xlsx,.xls"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (file) void onMolde(file);
+              }}
+            />
           </div>
         </CardHeader>
-        {/* fios pelas bordas das próprias células: quantidade de clientes é
-            variável e uma grade com vão sobrando deixa buraco na superfície */}
-        <div className="flex flex-wrap overflow-hidden">
-          {totals.map((t) => (
-            <div
-              key={t.c}
-              className="-mt-px -ml-px min-w-[180px] flex-1 border-t border-l border-[var(--color-rule)] px-4 py-3"
-            >
-              <div className="truncate text-xs text-[var(--color-graphite)]" title={t.c}>
-                {t.c}
+        <CardContent className="space-y-3">
+          {molde ? (
+            <>
+              <p className="text-sm text-[var(--color-graphite)]">
+                Molde <span className="font-medium text-[var(--color-ink)]">{molde.fileName}</span>
+                {' · '}
+                cabeçalho na linha {molde.headerIdx + 1}
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {CAMPOS_EXPORT.map(({ campo, label, obrigatorio }) => (
+                  <label key={campo} className="block">
+                    <span className="label-xs">
+                      {label}
+                      {obrigatorio && <span className="text-[var(--color-signal-warn)]"> · obrigatório</span>}
+                    </span>
+                    <Select
+                      className="mt-1 h-8 w-full text-[0.8125rem]"
+                      value={molde.map[campo] ?? ''}
+                      onChange={(e) => setCampo(campo, e.target.value)}
+                    >
+                      <option value="">— não usar —</option>
+                      {molde.headers.map((h, i) => (
+                        <option key={`${h}-${i}`} value={h}>
+                          {h || `(coluna ${i + 1})`}
+                        </option>
+                      ))}
+                    </Select>
+                  </label>
+                ))}
               </div>
-              <div className="num mt-0.5 text-[1.0625rem] font-semibold leading-[1.3]">{formatCurrency(t.v)}</div>
+              {molde.avisos.length > 0 && (
+                <ul className="space-y-1 rounded-md bg-[var(--color-signal-warn-wash)] px-3 py-2 text-sm text-[var(--color-signal-warn)]">
+                  {molde.avisos.map((a) => (
+                    <li key={a}>{a}</li>
+                  ))}
+                </ul>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-[var(--color-graphite)]">
+              Envie o modelo oficial (.xlsx). O Rateia detecta as colunas; ajuste se algum campo obrigatório ficar sem
+              origem — ele não preenche vazio no silêncio.
+            </p>
+          )}
+          {moldeErro && (
+            <div className="rounded-md bg-[var(--color-signal-risk-wash)] px-3 py-2 text-sm text-[var(--color-signal-risk)]">
+              {moldeErro}
             </div>
-          ))}
-        </div>
+          )}
+        </CardContent>
       </Card>
 
       {clients.map((c) => {
         const a = result.alloc[c];
         const cods = Object.keys(a).sort();
+        const nota = result.notas?.[c];
         return (
           <Card key={c} className="overflow-hidden">
             <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
               <div className="space-y-1">
                 <CardTitle>{c}</CardTitle>
-                <CardDescription className="num">{formatInteger(cods.length)} produto(s) na nota</CardDescription>
+                <CardDescription className="flex flex-wrap items-center gap-x-2">
+                  <span className="num">{formatInteger(cods.length)} produto(s) na nota</span>
+                  {nota?.cnpj ? (
+                    <>
+                      <span>·</span>
+                      <span className="code">{nota.cnpj}</span>
+                    </>
+                  ) : null}
+                </CardDescription>
               </div>
               <div className="text-right">
-                <div className="label-xs">Total da nota</div>
+                {nota && (
+                  <>
+                    <div className="label-xs">Solicitado {formatCurrency(nota.solicitado)}</div>
+                    <div className="label-xs mt-0.5">
+                      Diferença {formatCurrency(nota.diferenca)} ({formatPercent(nota.diferencaPct)})
+                    </div>
+                  </>
+                )}
+                <div className="label-xs mt-1">Total da nota</div>
                 <div className="num mt-0.5 text-[1.0625rem] font-semibold leading-[1.3]">
                   {formatCurrency(clientTotal(stock, result, c))}
                 </div>
@@ -112,7 +262,14 @@ export function ResultadoTab() {
                     <TableCell className="max-w-[360px] truncate" title={prod[cd]}>
                       {prod[cd]}
                     </TableCell>
-                    <TableCell className="num text-right font-medium">{formatQuantity(a[cd])}</TableCell>
+                    <TableCell className="num text-right font-medium">
+                      <span className="inline-flex items-center justify-end gap-1.5">
+                        {formatQuantity(a[cd])}
+                        {origem[cd] && Math.abs(a[cd] - Math.round(a[cd])) > 1e-6 && (
+                          <Badge variant="accent">origem</Badge>
+                        )}
+                      </span>
+                    </TableCell>
                     <TableCell className="num text-right text-[var(--color-graphite)]">
                       {formatCurrency4(pu[cd])}
                     </TableCell>

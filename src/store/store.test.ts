@@ -110,6 +110,18 @@ describe('rascunhos das telas — trocar de passo não perde o preenchido', () =
     expect(s.tab).toBe('distribuir');
   });
 
+  it('Distribuir pedidos consome o pedido cruzado sem redigitar', () => {
+    useAppStore.getState().patchDrafts({ pedidos: [draftDeAba('WM')] });
+    useAppStore.getState().calculate();
+
+    const s = useAppStore.getState();
+    expect(s.tab).toBe('resultado');
+    expect(s.clients).toContain('WM');
+    expect(s.result).not.toBeNull();
+    expect(s.result!.alloc['WM']['A-1']).toBeGreaterThan(0);
+    expect(s.result!.notas?.['WM']?.solicitado).toBe(5000);
+  });
+
   it('uma nova planilha do cliente apaga distribuir, notas e sobra', () => {
     const store = useAppStore.getState();
     store.addClient('antigo');
@@ -126,6 +138,20 @@ describe('rascunhos das telas — trocar de passo não perde o preenchido', () =
     expect(s.result).toBeNull();
     expect(s.drafts.sobraDestino).toBe('');
     expect(s.drafts.novoCliente).toBe('');
+  });
+
+  it('o molde de exportação permanece na sessão ao carregar um pedido novo', () => {
+    const molde = {
+      bytes: [1, 2, 3],
+      fileName: 'oficial.xlsx',
+      headers: ['Código', 'Quantidade'],
+      headerIdx: 4,
+      map: { codigo: 'Código', quantidade: 'Quantidade' },
+      avisos: [] as string[],
+    };
+    useAppStore.getState().patchDrafts({ exportMolde: molde });
+    useAppStore.getState().carregarPedidos([draftDeAba('WM')], null);
+    expect(useAppStore.getState().drafts.exportMolde?.fileName).toBe('oficial.xlsx');
   });
 
   it('applyPedidos com valor-alvo em % gera regra percentual', () => {
