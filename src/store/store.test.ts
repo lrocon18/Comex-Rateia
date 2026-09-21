@@ -83,7 +83,7 @@ describe('rascunhos das telas — trocar de passo não perde o preenchido', () =
     expect(d.regra).toMatchObject({ tipo: 'meta', valor: 15000, codigos: ['A-1', 'A-2'] });
   });
 
-  it('applyPedidos consome a conferência e descarta o rascunho das abas', () => {
+  it('applyPedidos gera clientes e regras e mantém a conferência na tela', () => {
     useAppStore.getState().patchDrafts({ pedidos: [draftDeAba('WM')] });
 
     useAppStore.getState().applyPedidos([
@@ -102,10 +102,30 @@ describe('rascunhos das telas — trocar de passo não perde o preenchido', () =
     ]);
 
     const s = useAppStore.getState();
-    expect(s.drafts.pedidos).toBeNull();
+    expect(s.drafts.pedidos).toHaveLength(1);
+    expect(s.drafts.pedidos?.[0].pedido.nome).toBe('WM');
     expect(s.clients).toEqual(['WM']);
     expect(s.rules).toHaveLength(1);
     expect(s.rules[0]).toMatchObject({ tipo: 'meta', valor: 5000, cliente: 'WM' });
+    expect(s.tab).toBe('distribuir');
+  });
+
+  it('uma nova planilha do cliente apaga distribuir, notas e sobra', () => {
+    const store = useAppStore.getState();
+    store.addClient('antigo');
+    store.addRule({ tipo: 'igual', clientes: [], variacao: 3 });
+    store.calculate();
+    store.patchDrafts({ sobraDestino: 'antigo', novoCliente: 'x' });
+
+    useAppStore.getState().carregarPedidos([draftDeAba('WM')], null);
+
+    const s = useAppStore.getState();
+    expect(s.drafts.pedidos).toHaveLength(1);
+    expect(s.clients).toEqual([]);
+    expect(s.rules).toEqual([]);
+    expect(s.result).toBeNull();
+    expect(s.drafts.sobraDestino).toBe('');
+    expect(s.drafts.novoCliente).toBe('');
   });
 
   it('applyPedidos com valor-alvo em % gera regra percentual', () => {

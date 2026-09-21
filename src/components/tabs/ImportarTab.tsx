@@ -56,6 +56,7 @@ function resumoLinha(row: Row): string {
 export function ImportarTab() {
   const stock = useAppStore((s) => s.stock);
   const applyPedidos = useAppStore((s) => s.applyPedidos);
+  const carregarPedidos = useAppStore((s) => s.carregarPedidos);
   // a conferência das abas vive no store: trocar de passo não pode custar o
   // trabalho já feito aqui
   const drafts = useAppStore((s) => s.drafts.pedidos);
@@ -98,7 +99,6 @@ export function ImportarTab() {
   };
 
   const onFile = async (file: File) => {
-    patchDrafts({ pedidos: null, pedidosErro: null });
     try {
       const { abas, parses } = await importCliente(file);
       const novos: PedidoDraft[] = [];
@@ -113,12 +113,12 @@ export function ImportarTab() {
         }
         novos.push({ ...montarDraft(rows, parse), daMemoria });
       }
-      patchDrafts({
-        pedidos: novos,
-        pedidosErro: novos.some((d) => d.itens.length)
+      carregarPedidos(
+        novos,
+        novos.some((d) => d.itens.length)
           ? null
           : 'Não reconheci a tabela de produtos em nenhuma aba. Escolha a linha do cabeçalho e as colunas abaixo.',
-      });
+      );
     } catch (e) {
       setErro((e as Error).message);
     }
@@ -223,7 +223,6 @@ export function ImportarTab() {
     }));
     // memória: o padrão de colunas daquele cliente para a próxima planilha
     await Promise.all(usados.map((d) => saveMapping(d.pedido.nome, d.parse.map)));
-    // applyPedidos já descarta o rascunho: a conferência foi consumida
     applyPedidos(confirmados);
   };
 

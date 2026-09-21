@@ -117,6 +117,8 @@ interface AppState {
   patchDrafts: (p: Partial<Drafts>) => void;
   patchRegraDraft: (p: Partial<RegraDraft>) => void;
   setPedidosDraft: (fn: (anterior: PedidoDraft[] | null) => PedidoDraft[] | null) => void;
+  /** Nova planilha do cliente: substitui a conferência e zera distribuir / notas / sobra. */
+  carregarPedidos: (pedidos: PedidoDraft[] | null, pedidosErro: string | null) => void;
   setStock: (produtos: Produto[], fileName: string) => void;
   startDivision: (produtos: Produto[], fileName: string) => void;
   addClient: (nome: string) => void;
@@ -156,6 +158,22 @@ export const useAppStore = create<AppState>((set, get) => ({
   patchDrafts: (p) => set((s) => ({ drafts: { ...s.drafts, ...p } })),
   patchRegraDraft: (p) => set((s) => ({ drafts: { ...s.drafts, regra: { ...s.drafts.regra, ...p } } })),
   setPedidosDraft: (fn) => set((s) => ({ drafts: { ...s.drafts, pedidos: fn(s.drafts.pedidos) } })),
+
+  carregarPedidos: (pedidos, pedidosErro) =>
+    set((s) => ({
+      clients: [],
+      rules: [],
+      result: null,
+      drafts: {
+        ...s.drafts,
+        pedidos,
+        pedidosErro,
+        regra: REGRA_VAZIA,
+        novoCliente: '',
+        sobraDestino: '',
+        sobraNovoCliente: '',
+      },
+    })),
 
   setStock: (produtos, fileName) =>
     set((s) => ({
@@ -233,9 +251,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     }),
 
   applyPedidos: (confirmados) =>
-    set((s) => {
-      const clients = [...s.clients];
-      const rules = [...s.rules];
+    set(() => {
+      const clients: string[] = [];
+      const rules: Regra[] = [];
       for (const { pedido, matches } of confirmados) {
         const nome = pedido.nome.trim() || pedido.aba;
         if (!clients.includes(nome)) clients.push(nome);
@@ -264,13 +282,12 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
         }
       }
-      // conferência consumida: o rascunho das abas sai de cena
+      // a conferência fica na tela: trocar de aba (estoque, distribuir) não a apaga
       return {
         clients,
         rules,
         result: null,
-        tab: 'distribuir',
-        drafts: { ...s.drafts, pedidos: null, pedidosErro: null },
+        tab: 'distribuir' as const,
       };
     }),
 

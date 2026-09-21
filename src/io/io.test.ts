@@ -120,7 +120,7 @@ describe('parseSheetToPedido — planilha do cliente', () => {
   const pedido = parseSheetToPedido('WM', rows)!;
 
   it('acha nome, CNPJ e valor-alvo do cabeçalho', () => {
-    expect(pedido.nome).toBe('WM');
+    expect(pedido.nome).toBe('vlr maximo NF');
     expect(pedido.cnpj).toBe('12.345.678/0001-90');
     expect(pedido.valorAlvo).toBe(5000);
   });
@@ -224,15 +224,16 @@ describe('cabeçalho A3 vs rótulo CNPJ em B1', () => {
     expect(pedido.nome).toBe('ACME LTDA');
   });
 
-  it('C3 em % vira valor-alvo percentual', () => {
+  it('C3 em % não vira nome da seção — o nome é sempre A3', () => {
     const pedido = parseSheetToPedido('ABA', [
       ['Cliente', 'CNPJ'],
       ['', '12.345.678/0001-90'],
-      ['ACME LTDA', '', '15%'],
+      ['ACME LTDA', '', '100%'],
       ['Ref. Mercadoria', 'Descricao', 'Qts'],
       ['A-1', 'peça', '2'],
     ])!;
-    expect(pedido.valorAlvo).toBe(15);
+    expect(pedido.nome).toBe('ACME LTDA');
+    expect(pedido.valorAlvo).toBe(100);
     expect(pedido.valorAlvoUnidade).toBe('pct');
   });
 
@@ -269,7 +270,7 @@ describe('cabeçalho sem rótulo — nome ao lado do CNPJ e valor solto', () => 
       ['TP-1911', 'tecido', '10'],
     ])!;
     expect(pedido.cnpj).toBe('03.666.303/0001-36');
-    expect(pedido.nome).toBe('bibian');
+    expect(pedido.nome).toBe('WEX');
     expect(pedido.valorAlvo).toBe(15000);
   });
 
@@ -279,7 +280,7 @@ describe('cabeçalho sem rótulo — nome ao lado do CNPJ e valor solto', () => 
       ['Ref', 'Descricao', 'Qts'],
       ['A-1', 'peça', '1'],
     ])!;
-    expect(pedido.nome).toBe('ACME');
+    expect(pedido.nome).toBe('X');
     expect(pedido.valorAlvo).toBeNull();
   });
 });

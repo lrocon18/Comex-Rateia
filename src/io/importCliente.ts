@@ -44,22 +44,10 @@ export function pareceNomeCliente(v: string): boolean {
   const t = normalizeHeader(raw);
   if (normalizeCnpj(raw)) return false;
   if (VALOR_RE.test(t) || VALOR_SOZINHO_RE.test(t)) return false;
+  if (/%/.test(raw)) return false;
   if (ROTULO_NOME_RE.test(t)) return false;
   if (t.includes('maximo') || t.includes('vlr') || t.includes('sem nota') || t.includes('sem nf')) return false;
   return true;
-}
-
-/**
- * Nome do cliente na primeira célula útil à direita do CNPJ — é assim que a
- * planilha real escreve (sem rótulo): `CNPJ | M OLIVEIRA DINIZ | maximo de R$5mil`.
- */
-function nomeAoLadoDoCnpj(cells: string[], i: number): string {
-  for (let j = i + 1; j < cells.length; j++) {
-    const v = cells[j].trim();
-    if (!v) continue;
-    return pareceNomeCliente(v) ? v : '';
-  }
-  return '';
 }
 
 /**
@@ -86,14 +74,12 @@ export function findHeaderRow(rows: Row[], conhecidos?: string[]): number {
 
 /** Extrai CNPJ, nome e valor-alvo do bloco de cabeçalho (linhas antes da tabela). */
 function parseHeaderBlock(block: Row[]): {
-  nome: string;
   cnpj: string;
   valorAlvo: number | null;
   valorAlvoUnidade: ValorAlvoUnidade;
   semNota: boolean;
 } {
   let cnpj = '';
-  let nome = '';
   let valorAlvo: number | null = null;
   const valorAlvoUnidade: ValorAlvoUnidade = 'reais';
   let semNota = false;
@@ -107,19 +93,10 @@ function parseHeaderBlock(block: Row[]): {
 
       if (!cnpj) {
         const achado = normalizeCnpj(raw);
-        if (achado) {
-          cnpj = achado;
-          if (!nome) nome = nomeAoLadoDoCnpj(cells, i);
-        }
+        if (achado) cnpj = achado;
       }
       if (t.includes('sem nota') || t.includes('sem nf')) semNota = true;
 
-      // rótulos de nome — a célula à direita às vezes é outro rótulo ("CNPJ" em B1),
-      // não o nome; o nome nesse layout está em A3.
-      if ((t.includes('cliente') || t === 'nome') && !nome) {
-        const next = cell(row, i + 1);
-        if (pareceNomeCliente(next)) nome = next;
-      }
       // rótulos de valor-alvo
       if (valorAlvo == null && (t.includes('maximo') || t.includes('vlr') || t.includes('nf') || t === 'valor')) {
         // valor pode estar no mesmo texto ("maximo de R$5mil") ou na próxima célula
@@ -134,7 +111,7 @@ function parseHeaderBlock(block: Row[]): {
     }
   }
 
-  return { nome: pareceNomeCliente(nome) ? nome : '', cnpj, valorAlvo, valorAlvoUnidade, semNota };
+  return { cnpj, valorAlvo, valorAlvoUnidade, semNota };
 }
 
 /** Lê os itens da tabela a partir da linha seguinte ao header, pelo mapa dado. */
@@ -199,20 +176,19 @@ export function parseSheet(aba: string, rows: Row[], opts: ParseSheetOpts = {}):
     if (salvo && headers.includes(salvo)) map[campo] = salvo;
   }
 
-  let { nome, cnpj, valorAlvo, valorAlvoUnidade, semNota } = parseHeaderBlock(rows.slice(0, headerIdx));
-  // layout fixo do molde: A3 = nome do cliente, B1 = rótulo "CNPJ"
-  if (!nome && headerIdx !== 2) {
-    const a3 = cell(rows[2] || [], 0);
-    if (pareceNomeCliente(a3)) nome = a3;
-  }
+  let { cnpj, valorAlvo, valorAlvoUnidade, semNota } = parseHeaderBlock(rows.slice(0, headerIdx));
+  // nome da seção: sempre A3. Não inferir do CNPJ, de "Cliente" nem do valor-alvo (C3).
+  const a3 = headerIdx > 2 ? cell(rows[2] || [], 0) : '';
+  const nome = a3 || aba;
   // C3 = valor-alvo (reais ou %) só quando a linha 3 ainda é cabeçalho, não a tabela.
   if (headerIdx > 2) {
-    const c3 = parseValorAlvoCelula(rows[2]?.[2]);
+    const c3cell = cell(rows[2] || [], 2);
+    const c3 = normalizeCnpj(c3cell) ? { valor: null as number | null, unidade: 'reais' as const, semNota: false } : parseValorAlvoCelula(rows[2]?.[2]);
     if (c3.valor != null || c3.semNota) {
       valorAlvo = c3.valor;
       valorAlvoUnidade = c3.unidade;
       if (c3.semNota) semNota = true;
-    } else if (pareceNomeCliente(cell(rows[2] || [], 0)) && !cell(rows[2] || [], 2)) {
+    } else if (pareceNomeCliente(a3) && !c3cell) {
       // molde novo (nome em A3): C3 vazio é vazio, não herda valor de outro canto do cabeçalho
       valorAlvo = null;
     }
@@ -221,7 +197,7 @@ export function parseSheet(aba: string, rows: Row[], opts: ParseSheetOpts = {}):
 
   return {
     aba,
-    pedido: { aba, nome: nome || aba, cnpj, valorAlvo, valorAlvoUnidade, semNota, itens },
+    pedido: { aba, nome, cnpj, valorAlvo, valorAlvoUnidade, semNota, itens },
     headers,
     headerIdx,
     map,

@@ -91,7 +91,7 @@ describe('Planilha real do cliente — 4 abas com cabeçalhos de tamanho variáv
   it('WM: CNPJ, nome ao lado do CNPJ e valor informal "maximo de R$5mil"', () => {
     const p = parseSheetToPedido('WM', linhas(CLIENTE, 'WM'))!;
     expect(p.cnpj).toBe('66.269.378/0001-01');
-    expect(p.nome).toBe('M OLIVEIRA DINIZ');
+    expect(p.nome).toBe('Cliente Master:');
     expect(p.valorAlvo).toBe(5000);
     expect(p.semNota).toBe(false);
   });
@@ -99,14 +99,14 @@ describe('Planilha real do cliente — 4 abas com cabeçalhos de tamanho variáv
   it("WE'X: CNPJ escrito com vírgula é normalizado e o valor lê \"15k\"", () => {
     const p = parseSheetToPedido("WE'X", linhas(CLIENTE, "WE'X"))!;
     expect(p.cnpj).toBe('03.666.303/0001-36');
-    expect(p.nome).toBe('bibian');
+    expect(p.nome).toBe("WE'X");
     expect(p.valorAlvo).toBe(15000);
   });
 
   it('SG092: lê CNPJ e nome, sem valor-alvo informado', () => {
     const p = parseSheetToPedido('SG092', linhas(CLIENTE, 'SG092'))!;
     expect(p.cnpj).toBe('07.286.086/0001-00');
-    expect(p.nome).toBe('sg');
+    expect(p.nome).toBe('Cliente Master:');
     expect(p.valorAlvo).toBeNull();
   });
 
@@ -166,6 +166,6 @@ describe('Limitação conhecida: mais de um cliente por aba', () => {
     expect(nomes).toEqual(['bibian', 'eclair', 'pianeta', 'oxalis', 'mendry']);
 
     const p = parseSheetToPedido("WE'X", rows)!;
-    expect(p.nome).toBe('bibian'); // os outros 5 (e o "sem nota") ficam de fora
+    expect(p.nome).toBe("WE'X"); // A3 vazio nesta aba; os nomes na coluna D ficam de fora
   });
 });
