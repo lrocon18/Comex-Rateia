@@ -2,9 +2,11 @@ import { X } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import type { Regra } from '@/types';
 import { RuleForm } from '@/components/RuleForm';
+import { RedistribuirTetoButton } from '@/components/RedistribuirTetoButton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { clientePodeRedistribuirTeto } from '@/engine';
 import { formatCurrency } from '@/lib/utils';
 
 const ORDER: Record<Regra['tipo'], number> = { fixo: 1, quantidade: 1, percentual: 2, meta: 3, igual: 4 };
@@ -41,6 +43,8 @@ export function DistribuirTab() {
   const temPedido = useAppStore(
     (s) => s.drafts.pedidos?.some((d) => d.itens.some((i) => i.produto)) ?? false,
   );
+  const result = useAppStore((s) => s.result);
+  const jaNoTeto = useAppStore((s) => s.drafts.clientesTeto);
 
   const sorted = [...rules].sort((a, b) => ORDER[a.tipo] - ORDER[b.tipo]);
 
@@ -87,6 +91,26 @@ export function DistribuirTab() {
               </span>
             ))}
           </div>
+          {clients.some((c) => !jaNoTeto.includes(c) && clientePodeRedistribuirTeto(result, rules, c)) && (
+            <div className="space-y-2">
+              {clients
+                .filter((c) => !jaNoTeto.includes(c) && clientePodeRedistribuirTeto(result, rules, c))
+                .map((c) => (
+                  <div
+                    key={c}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[var(--color-signal-warn)] bg-[var(--color-signal-warn-wash)] px-3 py-2.5"
+                  >
+                    <div>
+                      <div className="text-sm font-medium">{c}</div>
+                      <div className="mt-0.5 text-xs text-[var(--color-graphite)]">
+                        passou de {formatCurrency(result?.notas?.[c]?.solicitado ?? 0)} com todos os produtos
+                      </div>
+                    </div>
+                    <RedistribuirTetoButton cliente={c} solicitado={result?.notas?.[c]?.solicitado ?? 0} />
+                  </div>
+                ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

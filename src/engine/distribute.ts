@@ -78,7 +78,14 @@ export function compute(
   for (const r of rules) {
     if (r.tipo === 'percentual') {
       const cods = scopeCods(r).filter((c) => avail[c] > 0);
-      const d = distribuirPedido({ codigos: cods, avail, pu, origemQuebrada, pct: r.pct });
+      const d = distribuirPedido({
+        codigos: cods,
+        avail,
+        pu,
+        origemQuebrada,
+        pct: r.pct,
+        tetoReal: r.tetoReal === true,
+      });
       aplicarRateio(r.cliente, d.take, {
         solicitado: d.solicitado,
         valor: d.value,

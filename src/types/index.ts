@@ -39,6 +39,8 @@ export interface RegraPercentual {
   pct: number; // % de cada produto no escopo
   scope: Escopo;
   codigos: string[]; // usados quando scope === 'sel'
+  /** true = não ultrapassa o solicitado (pode deixar SKU de fora). */
+  tetoReal?: boolean;
 }
 
 export interface RegraMeta {

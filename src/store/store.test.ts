@@ -227,4 +227,44 @@ describe('rascunhos das telas — trocar de passo não perde o preenchido', () =
     expect(d.pedidos).toBeNull();
     expect(d.sobraDestino).toBe('');
   });
+
+  it('redistribuir com teto baixa o valor e pode deixar produto de fora', () => {
+    const stock: Produto[] = [
+      { codigo: 'A', produto: 'a', estoque: 1, pu: 100 },
+      { codigo: 'B', produto: 'b', estoque: 1, pu: 100 },
+      { codigo: 'C', produto: 'c', estoque: 1, pu: 1 },
+    ];
+    useAppStore.getState().startDivision(stock, 'maino.xlsx');
+    const pedido = { aba: 'WM', nome: 'WM', cnpj: '', valorAlvo: 150, semNota: false, itens: [] };
+    const draft: PedidoDraft = {
+      rows: [],
+      parse: { aba: 'WM', pedido, headers: [], headerIdx: 0, map: {}, uncertain: [] },
+      pedido,
+      itens: stock.map((p) => ({
+        codigoPedido: p.codigo,
+        desc: p.produto,
+        qts: 1,
+        produto: p,
+        via: 'codigo' as const,
+      })),
+      valorAlvo: 150,
+      valorAlvoUnidade: 'reais',
+      daMemoria: false,
+      mapAberto: false,
+      itensAberto: false,
+    };
+    useAppStore.getState().patchDrafts({ pedidos: [draft] });
+    useAppStore.getState().calculate();
+
+    const antes = useAppStore.getState().result!;
+    expect(antes.notas?.WM?.diferenca).toBeGreaterThan(0);
+    expect(Object.values(antes.alloc.WM).filter((q) => q > 0)).toHaveLength(3);
+
+    useAppStore.getState().redistribuirComTeto('WM');
+    const depois = useAppStore.getState().result!;
+    expect(depois.notas?.WM?.valor).toBeLessThanOrEqual(150);
+    expect(depois.notas?.WM?.diferenca).toBeLessThanOrEqual(0.009);
+    expect(Object.values(depois.alloc.WM).filter((q) => q > 0).length).toBeLessThan(3);
+    expect(useAppStore.getState().drafts.clientesTeto).toContain('WM');
+  });
 });

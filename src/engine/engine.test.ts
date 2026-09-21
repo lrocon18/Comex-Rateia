@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import type { Produto, Regra } from '@/types';
 import { compute } from './distribute';
 import { distribuirPedido, metaFill } from './meta';
-import { quantidadePermitida, quantidadesPermitidas } from './granularity';
+import { quantidadePermitida, quantidadesPermitidas, minimoPositivo } from './granularity';
 import { splitEqual } from './equal';
-import { distributedMap } from './selectors';
+import { clientePodeRedistribuirTeto, distributedMap } from './selectors';
 import mainoRaw from '@/fixtures/maino.json';
 
 const MAINO = mainoRaw as Produto[];
@@ -161,6 +161,46 @@ describe('metaFill — orçamento sobre o conjunto inteiro', () => {
     );
     expect(value).toBeLessThanOrEqual(5000);
   });
+
+  it('cobre todos os SKUs listados antes de empilhar quantidade num item gordo', () => {
+    const pequenos = Array.from({ length: 20 }, (_, i) => `P${i}`);
+    const codigos = ['GORDO', ...pequenos];
+    const avail = { GORDO: 500, ...Object.fromEntries(pequenos.map((c) => [c, 1])) };
+    const pu = Object.fromEntries(codigos.map((c) => [c, 10]));
+    // total R$ 5.200; alvo alto (R$ 4.000) — o gordo sozinho fecharia a nota
+    const { take, value } = metaFill(codigos, avail, pu, 4000);
+    for (const c of pequenos) expect(take[c]).toBeGreaterThanOrEqual(1);
+    expect(take.GORDO).toBeGreaterThan(0);
+    expect(value).toBeGreaterThan(0);
+    const usados = codigos.filter((c) => (take[c] || 0) > 0);
+    expect(usados).toHaveLength(codigos.length);
+  });
+
+  it('não tira produto da nota no refino para aproximar o valor', () => {
+    const { take } = metaFill(['A', 'B', 'C'], { A: 1, B: 1, C: 1 }, { A: 100, B: 100, C: 1 }, 150);
+    expect(take.A).toBeGreaterThanOrEqual(1);
+    expect(take.B).toBeGreaterThanOrEqual(1);
+    expect(take.C).toBeGreaterThanOrEqual(1);
+  });
+
+  it('marca cliente para redistribuir só se passou do valor com 100% dos SKUs', () => {
+    const rules: Regra[] = [
+      { id: '1', tipo: 'meta', cliente: 'WM', valor: 150, scope: 'sel', codigos: ['A', 'B', 'C'], tetoReal: false },
+    ];
+    const cheio = {
+      alloc: { WM: { A: 1, B: 1, C: 1 } },
+      leftover: {},
+      availFinal: {},
+      notas: { WM: { solicitado: 150, valor: 201, diferenca: 51, diferencaPct: 34 } },
+    };
+    expect(clientePodeRedistribuirTeto(cheio, rules, 'WM')).toBe(true);
+    const teto = {
+      ...cheio,
+      alloc: { WM: { A: 1, C: 1 } },
+      notas: { WM: { solicitado: 150, valor: 101, diferenca: -49, diferencaPct: -32.6 } },
+    };
+    expect(clientePodeRedistribuirTeto(teto, rules, 'WM')).toBe(false);
+  });
 });
 
 describe('granularidade da origem', () => {
@@ -172,6 +212,12 @@ describe('granularidade da origem', () => {
     expect(quantidadesPermitidas(1.6, true)).toEqual([0, 1, 1.6]);
     expect(quantidadePermitida(0.3, 1.6, true)).toBe(false);
     expect(quantidadePermitida(1.6, 1.6, true)).toBe(true);
+  });
+
+  it('mínimo positivo é 1 na origem inteira e o original se a origem é < 1', () => {
+    expect(minimoPositivo(4, false)).toBe(1);
+    expect(minimoPositivo(1.6, true)).toBe(1);
+    expect(minimoPositivo(0.4, true)).toBe(0.4);
   });
 });
 

@@ -33,6 +33,11 @@ export function snapDown(ideal: number, disponivel: number, quebrada: boolean): 
   return Math.min(fl, Math.floor(cap + EPS));
 }
 
+/** Menor quantidade positiva permitida (1, ou o original quebrado se for < 1). */
+export function minimoPositivo(disponivel: number, quebrada: boolean): number {
+  return proximoIncremento(0, disponivel, quebrada);
+}
+
 /** Próximo incremento permitido a partir de `atual` (0 se não há). */
 export function proximoIncremento(atual: number, disponivel: number, quebrada: boolean): number {
   if (atual + EPS >= disponivel) return 0;

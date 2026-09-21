@@ -1,5 +1,5 @@
 import type { Saldo } from '@/types';
-import { proximoDecremento, proximoIncremento, snapDown } from './granularity';
+import { minimoPositivo, proximoDecremento, proximoIncremento, snapDown } from './granularity';
 
 export interface MetaFillResult {
   take: Record<string, number>;
@@ -43,12 +43,16 @@ function relatorio(take: Record<string, number>, pu: Saldo, solicitado: number):
 }
 
 /**
- * Rateia um alvo (R$ ou %) sobre o conjunto inteiro de SKUs, ajustando a
- * quantidade de cada item pelo PU de saída. Não escolhe um subconjunto até
- * somar o valor.
+ * Rateia um alvo (R$ ou %) sobre o conjunto inteiro de SKUs.
+ *
+ * Hierarquia obrigatória: primeiro o produto, depois a quantidade.
+ * Todo SKU listado com saldo entra na nota (mínimo positivo da grade). Só o
+ * que sobra do alvo é rateado em quantidade — nunca zera um item para
+ * empilhar unidades em outro.
  *
  * Grade: origem inteira só inteiros; origem quebrada permite 0…floor e o valor
- * original. Nunca inventa decimal. Aproxima o solicitado minimizando |diff|.
+ * original. Nunca inventa decimal. Aproxima o solicitado minimizando |diff|
+ * sem abrir mão da cobertura.
  */
 export function distribuirPedido(opts: DistribuirPedidoOpts): MetaFillResult {
   const { avail, pu, origemQuebrada, tetoReal = false } = opts;
@@ -57,8 +61,7 @@ export function distribuirPedido(opts: DistribuirPedidoOpts): MetaFillResult {
   const total = pool.reduce((s, c) => s + avail[c] * pu[c], 0);
 
   const pct = opts.pct != null && Number.isFinite(opts.pct) ? opts.pct : null;
-  const solicitado =
-    pct != null ? total * (pct / 100) : Math.max(0, opts.alvo ?? 0);
+  const solicitado = pct != null ? total * (pct / 100) : Math.max(0, opts.alvo ?? 0);
 
   if (total <= 0 || solicitado <= EPS) return relatorio(take, pu, solicitado);
 
@@ -67,43 +70,76 @@ export function distribuirPedido(opts: DistribuirPedidoOpts): MetaFillResult {
     return relatorio(take, pu, solicitado);
   }
 
-  const scale = solicitado / total;
-  const ideal: Record<string, number> = {};
-  for (const c of pool) {
-    const qbr = quebradaDe(c, origemQuebrada);
-    ideal[c] = avail[c] * scale;
-    const n = snapDown(ideal[c], avail[c], qbr);
-    if (n > EPS) take[c] = n;
+  const minQ: Record<string, number> = {};
+  for (const c of pool) minQ[c] = minimoPositivo(avail[c], quebradaDe(c, origemQuebrada));
+
+  // 1. Cobertura: todo produto listado entra. Com tetoReal, inclui os mais
+  // baratos enquanto couber — não estoura o alvo.
+  if (tetoReal) {
+    const ordem = [...pool].sort((a, b) => pu[a] - pu[b] || a.localeCompare(b));
+    let gasto = 0;
+    for (const c of ordem) {
+      const add = minQ[c] * pu[c];
+      if (add <= EPS) continue;
+      if (gasto + add > solicitado + EPS) continue;
+      take[c] = minQ[c];
+      gasto += add;
+    }
+  } else {
+    for (const c of pool) {
+      if (minQ[c] > EPS) take[c] = minQ[c];
+    }
   }
+
+  const piso: Record<string, number> = {};
+  for (const c of pool) piso[c] = take[c] || 0;
 
   const aceita = (novo: number, atual: number) => {
     if (tetoReal && novo > solicitado + EPS) return false;
     return Math.abs(novo - solicitado) + EPS < Math.abs(atual - solicitado);
   };
 
-  // Resíduo: maiores restos, só incrementos da grade que aproximam o alvo.
-  let guard = 0;
-  while (guard++ < 200000) {
-    const value = valorDe(take, pu);
-    let best: { c: string; step: number; resto: number } | null = null;
-    for (const c of pool) {
-      const qbr = quebradaDe(c, origemQuebrada);
-      const atual = take[c] || 0;
-      const step = proximoIncremento(atual, avail[c], qbr);
-      if (step <= EPS) continue;
-      const novo = value + step * pu[c];
-      if (!aceita(novo, value)) continue;
-      const resto = ideal[c] - atual;
-      if (!best || resto > best.resto + EPS || (Math.abs(resto - best.resto) <= EPS && pu[c] < pu[best.c])) {
-        best = { c, step, resto };
+  // 2. Quantidade: o que resta do alvo, na capacidade que sobrou, em cota.
+  const restAlvo = solicitado - valorDe(take, pu);
+  if (restAlvo > EPS) {
+    const restTotal = pool.reduce((s, c) => s + Math.max(0, avail[c] - (take[c] || 0)) * pu[c], 0);
+    if (restTotal <= restAlvo + EPS) {
+      for (const c of pool) take[c] = avail[c];
+    } else if (restTotal > EPS) {
+      const scale = restAlvo / restTotal;
+      const ideal: Record<string, number> = {};
+      for (const c of pool) {
+        const qbr = quebradaDe(c, origemQuebrada);
+        const resto = Math.max(0, avail[c] - (take[c] || 0));
+        ideal[c] = resto * scale;
+        const extra = snapDown(ideal[c], resto, qbr);
+        if (extra > EPS) take[c] = (take[c] || 0) + extra;
+      }
+
+      let guard = 0;
+      while (guard++ < 200000) {
+        const value = valorDe(take, pu);
+        let best: { c: string; step: number; resto: number } | null = null;
+        for (const c of pool) {
+          const qbr = quebradaDe(c, origemQuebrada);
+          const atual = take[c] || 0;
+          const step = proximoIncremento(atual, avail[c], qbr);
+          if (step <= EPS) continue;
+          const novo = value + step * pu[c];
+          if (!aceita(novo, value)) continue;
+          const resto = (piso[c] || 0) + ideal[c] - atual;
+          if (!best || resto > best.resto + EPS || (Math.abs(resto - best.resto) <= EPS && pu[c] < pu[best.c])) {
+            best = { c, step, resto };
+          }
+        }
+        if (!best) break;
+        take[best.c] = (take[best.c] || 0) + best.step;
       }
     }
-    if (!best) break;
-    take[best.c] = (take[best.c] || 0) + best.step;
   }
 
-  // Refino: qualquer +/− permitido que reduza |valor − solicitado|.
-  guard = 0;
+  // 3. Refino: só movimento que reduza |diff| e não tire produto da nota.
+  let guard = 0;
   while (guard++ < 200000) {
     const value = valorDe(take, pu);
     let best: { c: string; delta: number; ganho: number } | null = null;
@@ -114,6 +150,8 @@ export function distribuirPedido(opts: DistribuirPedidoOpts): MetaFillResult {
       const down = proximoDecremento(atual, avail[c], qbr);
       for (const signed of [up, down ? -down : 0]) {
         if (Math.abs(signed) <= EPS) continue;
+        const next = atual + signed;
+        if (next + EPS < (piso[c] || 0)) continue;
         const novo = value + signed * pu[c];
         if (!aceita(novo, value)) continue;
         const ganho = Math.abs(value - solicitado) - Math.abs(novo - solicitado);

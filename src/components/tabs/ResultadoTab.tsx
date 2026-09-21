@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useAppStore } from '@/store/useAppStore';
-import { clientTotal, prodMap, puMap } from '@/engine';
+import { clientePodeRedistribuirTeto, clientTotal, prodMap, puMap } from '@/engine';
 import { isOrigemQuebrada } from '@/engine/granularity';
 import {
   CAMPOS_EXPORT,
@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { RedistribuirTetoButton } from '@/components/RedistribuirTetoButton';
 import { formatCurrency, formatCurrency4, formatInteger, formatPercent, formatQuantity } from '@/lib/utils';
 
 function Vazio({ children }: { children: React.ReactNode }) {
@@ -31,6 +32,8 @@ export function ResultadoTab() {
   const setTab = useAppStore((s) => s.setTab);
   const molde = useAppStore((s) => s.drafts.exportMolde);
   const patchDrafts = useAppStore((s) => s.patchDrafts);
+  const rules = useAppStore((s) => s.rules);
+  const jaNoTeto = useAppStore((s) => s.drafts.clientesTeto);
   const origem = Object.fromEntries(stock.map((s) => [s.codigo, isOrigemQuebrada(s.estoque, s.origemQuebrada)]));
   const fileInput = useRef<HTMLInputElement>(null);
   const [moldeErro, setMoldeErro] = useState<string | null>(null);
@@ -230,7 +233,11 @@ export function ResultadoTab() {
                   ) : null}
                 </CardDescription>
               </div>
-              <div className="text-right">
+              <div className="flex flex-col items-end gap-2">
+                {nota && !jaNoTeto.includes(c) && clientePodeRedistribuirTeto(result, rules, c) && (
+                  <RedistribuirTetoButton cliente={c} solicitado={nota.solicitado} />
+                )}
+                <div className="text-right">
                 {nota && (
                   <>
                     <div className="label-xs">Solicitado {formatCurrency(nota.solicitado)}</div>
@@ -242,6 +249,7 @@ export function ResultadoTab() {
                 <div className="label-xs mt-1">Total da nota</div>
                 <div className="num mt-0.5 text-[1.0625rem] font-semibold leading-[1.3]">
                   {formatCurrency(clientTotal(stock, result, c))}
+                </div>
                 </div>
               </div>
             </CardHeader>

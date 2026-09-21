@@ -76,6 +76,8 @@ export interface Drafts {
   sobraNovoCliente: string;
   /** Molde oficial enviado pela operadora para a exportação em um arquivo. */
   exportMolde: ExportMolde | null;
+  /** Clientes que pediram redistribuição com teto de valor (podem perder SKUs). */
+  clientesTeto: string[];
 }
 
 const REGRA_VAZIA: RegraDraft = {
@@ -100,6 +102,7 @@ const DRAFTS_VAZIOS: Drafts = {
   sobraDestino: '',
   sobraNovoCliente: '',
   exportMolde: null,
+  clientesTeto: [],
 };
 
 interface AppState {
@@ -129,6 +132,8 @@ interface AppState {
   addRule: (regra: RegraInput) => void;
   removeRule: (id: string) => void;
   calculate: () => void;
+  /** Recalcula o cliente respeitando o teto de valor; SKUs da lista podem ficar de fora. */
+  redistribuirComTeto: (cliente: string) => void;
   assignLeftover: (cliente: string) => void;
   applyPedidos: (confirmados: PedidoConfirmado[]) => void;
 
@@ -138,9 +143,10 @@ interface AppState {
   openOperation: (id: number) => Promise<void>;
 }
 
-function regrasDoPedido(pedidos: PedidoDraft[]): { clients: string[]; rules: Regra[] } {
+function regrasDoPedido(pedidos: PedidoDraft[], clientesTeto: string[] = []): { clients: string[]; rules: Regra[] } {
   const clients: string[] = [];
   const rules: Regra[] = [];
+  const teto = new Set(clientesTeto);
   for (const d of pedidos) {
     if (!d.itens.some((i) => i.produto)) continue;
     const nome = d.pedido.nome.trim() || d.pedido.aba;
@@ -155,6 +161,7 @@ function regrasDoPedido(pedidos: PedidoDraft[]): { clients: string[]; rules: Reg
         pct: d.valorAlvo,
         scope: 'sel',
         codigos,
+        tetoReal: teto.has(nome),
       });
     } else {
       rules.push({
@@ -164,7 +171,7 @@ function regrasDoPedido(pedidos: PedidoDraft[]): { clients: string[]; rules: Reg
         valor: d.valorAlvo,
         scope: 'sel',
         codigos,
-        tetoReal: false,
+        tetoReal: teto.has(nome),
       });
     }
   }
@@ -208,6 +215,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         novoCliente: '',
         sobraDestino: '',
         sobraNovoCliente: '',
+        clientesTeto: [],
       },
     })),
 
@@ -223,6 +231,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         pedidos: null,
         pedidosErro: null,
         regra: { ...s.drafts.regra, codigo: '', codigos: [] },
+        clientesTeto: [],
       },
     })),
 
@@ -272,7 +281,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     let clients = s.clients;
     let rules = s.rules;
     if (pedidos?.length) {
-      const auto = regrasDoPedido(pedidos);
+      const auto = regrasDoPedido(pedidos, s.drafts.clientesTeto);
       const manuais = s.rules.filter((r) => r.tipo === 'igual' || r.tipo === 'fixo' || r.tipo === 'quantidade');
       clients = [...new Set([...auto.clients, ...s.clients])];
       rules = [...auto.rules, ...manuais];
@@ -285,6 +294,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
     set({ clients, rules, result, tab: 'resultado' });
+  },
+
+  redistribuirComTeto: (cliente) => {
+    const nome = cliente.trim();
+    if (!nome) return;
+    set((s) => ({
+      drafts: {
+        ...s.drafts,
+        clientesTeto: s.drafts.clientesTeto.includes(nome) ? s.drafts.clientesTeto : [...s.drafts.clientesTeto, nome],
+      },
+      rules: s.rules.map((r) => {
+        if ((r.tipo === 'meta' || r.tipo === 'percentual') && r.cliente === nome) return { ...r, tetoReal: true };
+        return r;
+      }),
+    }));
+    get().calculate();
   },
 
   assignLeftover: (cliente) =>
