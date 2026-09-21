@@ -182,6 +182,31 @@ describe('normalizeCnpj — separadores como o cliente digita', () => {
   });
 });
 
+describe('cabeçalho A3 vs rótulo CNPJ em B1', () => {
+  it('não usa o rótulo CNPJ em B1 como nome — lê A3', () => {
+    const pedido = parseSheetToPedido('ABA', [
+      ['Cliente', 'CNPJ'],
+      ['', '12.345.678/0001-90'],
+      ['M OLIVEIRA DINIZ', ''],
+      ['Ref. Mercadoria', 'Descricao', 'Qts'],
+      ['WM1-51', 'Tubo', '1'],
+    ])!;
+    expect(pedido.nome).toBe('M OLIVEIRA DINIZ');
+    expect(pedido.cnpj).toBe('12.345.678/0001-90');
+  });
+
+  it('lê A3 mesmo sem rótulo Cliente na linha 1', () => {
+    const pedido = parseSheetToPedido('ABA', [
+      ['', 'CNPJ'],
+      ['', '12.345.678/0001-90'],
+      ['ACME LTDA'],
+      ['Ref. Mercadoria', 'Descricao', 'Qts'],
+      ['A-1', 'peça', '2'],
+    ])!;
+    expect(pedido.nome).toBe('ACME LTDA');
+  });
+});
+
 describe('cabeçalho sem rótulo — nome ao lado do CNPJ e valor solto', () => {
   it('lê nome e "15k" na mesma linha do CNPJ, sem rótulo nenhum', () => {
     const pedido = parseSheetToPedido('WEX', [

@@ -91,6 +91,7 @@ export function ImportarTab() {
       valorAlvo: base ? base.valorAlvo : pedido.valorAlvo,
       daMemoria: base?.daMemoria ?? false,
       mapAberto: base?.mapAberto ?? parse.uncertain.length > 0,
+      itensAberto: base?.itensAberto ?? false,
     };
   };
 
@@ -145,6 +146,9 @@ export function ImportarTab() {
 
   const toggleMapa = (di: number) =>
     setDrafts((ds) => (ds ? ds.map((d, i) => (i === di ? { ...d, mapAberto: !d.mapAberto } : d)) : ds));
+
+  const toggleItens = (di: number) =>
+    setDrafts((ds) => (ds ? ds.map((d, i) => (i === di ? { ...d, itensAberto: !d.itensAberto } : d)) : ds));
 
   const override = (di: number, ri: number, codigo: string) =>
     setDrafts((ds) =>
@@ -358,45 +362,59 @@ export function ImportarTab() {
             </div>
 
             {d.itens.length > 0 && (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Cód. pedido</TableHead>
-                    <TableHead>Descrição</TableHead>
-                    <TableHead className="text-right">Qts</TableHead>
-                    <TableHead>Cruzamento</TableHead>
-                    <TableHead>Produto no estoque</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {d.itens.map((r, ri) => (
-                    <TableRow key={ri}>
-                      <TableCell className="code">{r.codigoPedido}</TableCell>
-                      <TableCell className="max-w-[220px] truncate" title={r.desc}>
-                        {r.desc}
-                      </TableCell>
-                      <TableCell className="num text-right">{formatInteger(r.qts)}</TableCell>
-                      <TableCell>
-                        <Status tone={VIA[r.via].tone}>{VIA[r.via].txt}</Status>
-                      </TableCell>
-                      <TableCell>
-                        <Select
-                          className="h-8 w-full max-w-[300px] text-[0.8125rem]"
-                          value={r.produto?.codigo ?? ''}
-                          onChange={(e) => override(di, ri, e.target.value)}
-                        >
-                          <option value="">— não casar —</option>
-                          {stock.map((s) => (
-                            <option key={s.codigo} value={s.codigo}>
-                              {s.codigo} — {s.produto}
-                            </option>
-                          ))}
-                        </Select>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <div className="border-b border-[var(--color-rule)] last:border-b-0">
+                <button
+                  type="button"
+                  onClick={() => toggleItens(di)}
+                  className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left"
+                >
+                  <span className="label-xs">TODOS OS ITENS</span>
+                  <span className="text-xs text-[var(--color-dock)]">
+                    {d.itensAberto ? 'ocultar' : `mostrar · ${formatInteger(d.itens.length)}`}
+                  </span>
+                </button>
+                {d.itensAberto && (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Cód. pedido</TableHead>
+                        <TableHead>Descrição</TableHead>
+                        <TableHead className="text-right">Qts</TableHead>
+                        <TableHead>Cruzamento</TableHead>
+                        <TableHead>Produto no estoque</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {d.itens.map((r, ri) => (
+                        <TableRow key={ri}>
+                          <TableCell className="code">{r.codigoPedido}</TableCell>
+                          <TableCell className="max-w-[220px] truncate" title={r.desc}>
+                            {r.desc}
+                          </TableCell>
+                          <TableCell className="num text-right">{formatInteger(r.qts)}</TableCell>
+                          <TableCell>
+                            <Status tone={VIA[r.via].tone}>{VIA[r.via].txt}</Status>
+                          </TableCell>
+                          <TableCell>
+                            <Select
+                              className="h-8 w-full max-w-[300px] text-[0.8125rem]"
+                              value={r.produto?.codigo ?? ''}
+                              onChange={(e) => override(di, ri, e.target.value)}
+                            >
+                              <option value="">— não casar —</option>
+                              {stock.map((s) => (
+                                <option key={s.codigo} value={s.codigo}>
+                                  {s.codigo} — {s.produto}
+                                </option>
+                              ))}
+                            </Select>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
             )}
           </Card>
         );

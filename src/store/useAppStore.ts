@@ -47,6 +47,8 @@ export interface PedidoDraft {
   /** o mapa veio da memória do cliente (padrão salvo) */
   daMemoria: boolean;
   mapAberto: boolean;
+  /** tabela de itens; começa fechada depois do mapeamento */
+  itensAberto: boolean;
 }
 
 /** Regra sendo montada no formulário do passo 3. */

@@ -18,6 +18,7 @@ function draftDeAba(nome: string): PedidoDraft {
     valorAlvo: 5000,
     daMemoria: false,
     mapAberto: false,
+    itensAberto: false,
   };
 }
 

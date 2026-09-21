@@ -33,6 +33,22 @@ export function normalizeCnpj(raw: string): string {
   return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
 }
 
+/** Rótulos de cabeçalho que a planilha coloca no lugar do nome. */
+const ROTULO_NOME_RE =
+  /^(cnpj|cliente|nome|valor|vlr|maximo|sem nota|sem nf|nf|qt cxs|qts|quantidade|descricao|codigo|ref(\.? mercadoria)?)$/;
+
+/** True quando o texto parece um nome de cliente, não rótulo, CNPJ ou valor. */
+export function pareceNomeCliente(v: string): boolean {
+  const raw = String(v ?? '').trim();
+  if (!raw) return false;
+  const t = normalizeHeader(raw);
+  if (normalizeCnpj(raw)) return false;
+  if (VALOR_RE.test(t) || VALOR_SOZINHO_RE.test(t)) return false;
+  if (ROTULO_NOME_RE.test(t)) return false;
+  if (t.includes('maximo') || t.includes('vlr') || t.includes('sem nota') || t.includes('sem nf')) return false;
+  return true;
+}
+
 /**
  * Nome do cliente na primeira célula útil à direita do CNPJ — é assim que a
  * planilha real escreve (sem rótulo): `CNPJ | M OLIVEIRA DINIZ | maximo de R$5mil`.
@@ -41,10 +57,7 @@ function nomeAoLadoDoCnpj(cells: string[], i: number): string {
   for (let j = i + 1; j < cells.length; j++) {
     const v = cells[j].trim();
     if (!v) continue;
-    const t = normalizeHeader(v);
-    if (VALOR_RE.test(t)) return '';
-    if (/maximo|vlr|valor|sem nota|sem nf|\bnf\b|cliente|cnpj/.test(t)) return '';
-    return v;
+    return pareceNomeCliente(v) ? v : '';
   }
   return '';
 }
@@ -72,10 +85,12 @@ export function findHeaderRow(rows: Row[], conhecidos?: string[]): number {
 }
 
 /** Extrai CNPJ, nome e valor-alvo do bloco de cabeçalho (linhas antes da tabela). */
-function parseHeaderBlock(
-  block: Row[],
-  aba: string,
-): { nome: string; cnpj: string; valorAlvo: number | null; semNota: boolean } {
+function parseHeaderBlock(block: Row[]): {
+  nome: string;
+  cnpj: string;
+  valorAlvo: number | null;
+  semNota: boolean;
+} {
   let cnpj = '';
   let nome = '';
   let valorAlvo: number | null = null;
@@ -97,10 +112,11 @@ function parseHeaderBlock(
       }
       if (t.includes('sem nota') || t.includes('sem nf')) semNota = true;
 
-      // rótulos de nome
+      // rótulos de nome — a célula à direita às vezes é outro rótulo ("CNPJ" em B1),
+      // não o nome; o nome nesse layout está em A3.
       if ((t.includes('cliente') || t === 'nome') && !nome) {
         const next = cell(row, i + 1);
-        if (next && !normalizeHeader(next).includes('cliente')) nome = next;
+        if (pareceNomeCliente(next)) nome = next;
       }
       // rótulos de valor-alvo
       if (valorAlvo == null && (t.includes('maximo') || t.includes('vlr') || t.includes('nf') || t === 'valor')) {
@@ -116,7 +132,7 @@ function parseHeaderBlock(
     }
   }
 
-  return { nome: nome || aba, cnpj, valorAlvo, semNota };
+  return { nome: pareceNomeCliente(nome) ? nome : '', cnpj, valorAlvo, semNota };
 }
 
 /** Lê os itens da tabela a partir da linha seguinte ao header, pelo mapa dado. */
@@ -181,12 +197,17 @@ export function parseSheet(aba: string, rows: Row[], opts: ParseSheetOpts = {}):
     if (salvo && headers.includes(salvo)) map[campo] = salvo;
   }
 
-  const { nome, cnpj, valorAlvo, semNota } = parseHeaderBlock(rows.slice(0, headerIdx), aba);
+  let { nome, cnpj, valorAlvo, semNota } = parseHeaderBlock(rows.slice(0, headerIdx));
+  // layout fixo do molde: A3 = nome do cliente, B1 = rótulo "CNPJ"
+  if (!nome && headerIdx !== 2) {
+    const a3 = cell(rows[2] || [], 0);
+    if (pareceNomeCliente(a3)) nome = a3;
+  }
   const itens = parseItens(rows, headerIdx, headers, map);
 
   return {
     aba,
-    pedido: { aba, nome, cnpj, valorAlvo, semNota, itens },
+    pedido: { aba, nome: nome || aba, cnpj, valorAlvo, semNota, itens },
     headers,
     headerIdx,
     map,
