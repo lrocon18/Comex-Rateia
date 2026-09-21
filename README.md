@@ -56,10 +56,18 @@ rascunhos são trabalho em andamento: ficam fora do autosave, que só grava a di
    e a linha de cabeçalho: trocar qualquer uma reprocessa os itens na hora, e abas que o sistema não
    reconheceu sozinho pedem a linha do cabeçalho em vez de sumir. O padrão de colunas é **guardado por
    cliente** e reaplicado na importação seguinte (selo “padrão salvo”).
-3. **Distribuir** — clientes + regras nas 4 modalidades, aplicadas sempre na ordem `fixa/quantidade → percentual → meta → divisão igual`, cada etapa consumindo o saldo.
-4. **Resultado** — valor de cada nota (com variação proposital para não saírem idênticas) + uma aba por cliente.
+3. **Distribuir pedidos** — clientes + regras (a meta de cada cliente já vem pronta do passo 2) nas 4
+   modalidades, aplicadas sempre na ordem `fixa/quantidade → percentual → meta → divisão igual`, cada etapa
+   consumindo o saldo.
+4. **Resultado** — valor de cada nota (com variação proposital para não saírem idênticas) + uma aba por
+   cliente. Duas exportações: o `.xlsx` de controle geral, e um arquivo por cliente no molde oficial
+   (`src/assets/template-pedido-cliente.xlsx`) — pronto para reimportar no processo da operadora.
 5. **Sobra** — saldo restante, sem destino automático (a operadora decide).
 6. **Exportar `.xlsx`** — Controle geral + uma aba por cliente + Sobra.
+
+Quantidade é sempre inteira, **exceto** quando o próprio Maino já traz um produto com quantidade quebrada
+(ex.: `1,6`) — nesse caso o valor original é preservado e tratado como parcela indivisível (tudo ou nada),
+nunca fatiado pra bater um valor. Ver `reference/docs/04-motor-de-distribuicao.md`.
 
 Divisões são salvas/abertas localmente (IndexedDB) e há autosave da divisão corrente.
 

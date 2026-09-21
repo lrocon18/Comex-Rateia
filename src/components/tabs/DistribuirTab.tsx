@@ -133,11 +133,14 @@ export function DistribuirTab() {
       <Card>
         <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b-0">
           <div className="space-y-1">
-            <CardTitle>Calcular a distribuição</CardTitle>
-            <CardDescription>roda as regras respeitando o saldo — nunca ultrapassa o disponível</CardDescription>
+            <CardTitle>Distribuir pedidos</CardTitle>
+            <CardDescription>
+              usa cliente, CNPJ, valor e produtos já identificados no pedido — roda as regras respeitando o
+              saldo, nunca ultrapassa o disponível
+            </CardDescription>
           </div>
           <Button size="lg" onClick={calculate} disabled={rules.length === 0}>
-            Calcular
+            Distribuir pedidos
           </Button>
         </CardHeader>
       </Card>

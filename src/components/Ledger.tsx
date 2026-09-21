@@ -1,6 +1,6 @@
 import { useAppStore } from '@/store/useAppStore';
 import { ledgerTotals } from '@/engine';
-import { cn, formatCurrency, formatInteger } from '@/lib/utils';
+import { cn, formatCurrency, formatInteger, formatQuantity } from '@/lib/utils';
 
 function Readout({ k, v, tone }: { k: string; v: string; tone?: string }) {
   return (
@@ -23,11 +23,11 @@ export function Ledger() {
   return (
     <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-[var(--color-rule)] bg-[var(--color-rule)] sm:grid-cols-3 lg:grid-cols-6">
       <Readout k="Produtos" v={formatInteger(t.produtos)} />
-      <Readout k="Estoque inicial" v={formatInteger(t.estoqueInicial)} />
-      <Readout k="Distribuído" v={formatInteger(t.distribuido)} tone={t.distribuido ? undefined : apagado} />
+      <Readout k="Estoque inicial" v={formatQuantity(t.estoqueInicial)} />
+      <Readout k="Distribuído" v={formatQuantity(t.distribuido)} tone={t.distribuido ? undefined : apagado} />
       <Readout
         k="Disponível"
-        v={formatInteger(t.disponivel)}
+        v={formatQuantity(t.disponivel)}
         tone={t.disponivel ? 'text-[var(--color-dock)]' : apagado}
       />
       <Readout k="Valor da sobra" v={formatCurrency(t.valorSobra)} />

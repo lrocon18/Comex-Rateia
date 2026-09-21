@@ -14,7 +14,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { formatCurrency, formatCurrency4, formatInteger } from '@/lib/utils';
+import { formatCurrency, formatCurrency4, formatInteger, formatQuantity } from '@/lib/utils';
 
 const PREVIEW_ROWS = 10;
 
@@ -168,7 +168,7 @@ export function ImportMainoDialog({ open, onClose, mode = 'nova' }: Props) {
             <div className="grid grid-cols-3 gap-px overflow-hidden rounded-md border border-[var(--color-rule)] bg-[var(--color-rule)]">
               {[
                 { k: 'Produtos', v: formatInteger(totais.produtos) },
-                { k: 'Unidades', v: formatInteger(totais.unidades) },
+                { k: 'Unidades', v: formatQuantity(totais.unidades) },
                 { k: 'Valor total', v: formatCurrency(totais.valor) },
               ].map((c) => (
                 <div key={c.k} className="bg-[var(--color-surface)] px-3 py-2.5">
@@ -209,7 +209,7 @@ export function ImportMainoDialog({ open, onClose, mode = 'nova' }: Props) {
                       <TableCell className="max-w-[260px] truncate" title={p.produto}>
                         {p.produto}
                       </TableCell>
-                      <TableCell className="num text-right">{formatInteger(p.estoque)}</TableCell>
+                      <TableCell className="num text-right">{formatQuantity(p.estoque)}</TableCell>
                       <TableCell className="num text-right text-[var(--color-graphite)]">
                         {formatCurrency4(p.pu)}
                       </TableCell>

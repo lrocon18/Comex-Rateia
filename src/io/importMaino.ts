@@ -1,5 +1,6 @@
 import type { Produto } from '@/types';
 import { detectColumns, normalizeHeader } from './columnMap';
+import { parseDecimal } from './normalizeValue';
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
 
@@ -37,7 +38,9 @@ export function produtosFromRows(rows: Record<string, unknown>[]): MainoImport {
   for (const r of rows) {
     const cod = String(r[kc] ?? '').trim();
     if (!cod || cod.toLowerCase() === 'nan') continue;
-    const q = Math.round(Number(String(r[kq] ?? '').replace(',', '.')) || 0);
+    // não arredonda: a planilha de origem pode trazer quantidade já quebrada
+    // (ex.: 1,6) de propósito — o motor decide o que fazer com isso (doc 04 §exceção).
+    const q = parseDecimal(r[kq]) || 0;
     const p = Number(String(r[ku] ?? '').replace(',', '.')) || 0;
     const nome = kp ? cleanMainoName(String(r[kp] ?? ''), cod) : cod;
     produtos.push({ codigo: cod, produto: nome, estoque: q, pu: p });

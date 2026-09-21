@@ -1,10 +1,10 @@
 import { useAppStore } from '@/store/useAppStore';
 import { clientTotal, prodMap, puMap } from '@/engine';
-import { exportXlsx } from '@/io';
+import { exportClientesPorTemplate, exportXlsx } from '@/io';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { formatCurrency, formatCurrency4, formatInteger } from '@/lib/utils';
+import { formatCurrency, formatCurrency4, formatInteger, formatQuantity } from '@/lib/utils';
 
 function Vazio({ children }: { children: React.ReactNode }) {
   return (
@@ -52,7 +52,14 @@ export function ResultadoTab() {
               as notas saem propositalmente diferentes — {formatCurrency(spread)} entre a maior e a menor
             </CardDescription>
           </div>
-          <Button onClick={() => void exportXlsx(stock, result)}>Exportar .xlsx</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => void exportXlsx(stock, result)}>
+              Exportar controle geral
+            </Button>
+            <Button onClick={() => void exportClientesPorTemplate(stock, result)}>
+              Exportar planilha (modelo do cliente)
+            </Button>
+          </div>
         </CardHeader>
         {/* fios pelas bordas das próprias células: quantidade de clientes é
             variável e uma grade com vão sobrando deixa buraco na superfície */}
@@ -105,7 +112,7 @@ export function ResultadoTab() {
                     <TableCell className="max-w-[360px] truncate" title={prod[cd]}>
                       {prod[cd]}
                     </TableCell>
-                    <TableCell className="num text-right font-medium">{formatInteger(a[cd])}</TableCell>
+                    <TableCell className="num text-right font-medium">{formatQuantity(a[cd])}</TableCell>
                     <TableCell className="num text-right text-[var(--color-graphite)]">
                       {formatCurrency4(pu[cd])}
                     </TableCell>

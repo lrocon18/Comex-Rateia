@@ -132,9 +132,40 @@ describe('metaFill — doc 04 §3 / doc 06 D2', () => {
       avail,
       puOf(MAINO),
       5000,
+      {},
       true,
     );
     expect(value).toBeLessThanOrEqual(5000);
+  });
+});
+
+describe('metaFill — exceção de origem fracionária (doc 04)', () => {
+  it('produto com origem quebrada: leva tudo quando cabe no alvo (nunca uma fatia)', () => {
+    const avail = { A: 1.6, B: 10 };
+    const pu = { A: 100, B: 10 };
+    const { take, value } = metaFill(['A', 'B'], avail, pu, 260, { A: false, B: true });
+    expect(take.A).toBe(1.6); // parcela indivisível, inteira
+    expect(Number.isInteger(take.B)).toBe(true); // origem inteira nunca quebra
+    expect(value).toBeCloseTo(1.6 * 100 + take.B * 10, 6);
+  });
+
+  it('produto com origem quebrada não cabendo no alvo: fica de fora do passo 1 (não fatia pra caber)', () => {
+    const avail = { A: 1.6 };
+    const pu = { A: 100 };
+    // alvo bem menor que o valor da parcela inteira (160): não pode pegar um pedaço dela no passo 1
+    const semOvershoot = metaFill(['A'], avail, pu, 50, { A: false }, true);
+    expect(semOvershoot.take.A ?? 0).toBe(0);
+    expect(semOvershoot.value).toBe(0);
+    // com overshoot permitido, a parcela inteira pode ser usada pra passar da meta (não fatiada)
+    const comOvershoot = metaFill(['A'], avail, pu, 50, { A: false }, false);
+    expect(comOvershoot.take.A).toBe(1.6);
+  });
+
+  it('nunca gera uma quantidade quebrada nova quando a origem é inteira', () => {
+    const avail = { A: 7 };
+    const pu = { A: 10 };
+    const { take } = metaFill(['A'], avail, pu, 55, { A: true });
+    expect(Number.isInteger(take.A)).toBe(true);
   });
 });
 
@@ -158,5 +189,47 @@ describe('compute — ordem das regras consome o saldo', () => {
     const r = compute(stock, ['G'], rules, mulberry32(1));
     expect(r.alloc['G']['A']).toBe(5);
     expect(r.availFinal['A']).toBe(0);
+  });
+});
+
+describe('compute — exceção de origem fracionária (doc 04)', () => {
+  it('fixo 100% de um produto com origem quebrada preserva a fração original', () => {
+    const stock: Produto[] = [{ codigo: 'A', produto: 'p', estoque: 1.6, pu: 10 }];
+    const rules: Regra[] = [{ id: '1', tipo: 'fixo', cliente: 'G', codigo: 'A', pct: 100 }];
+    const r = compute(stock, ['G'], rules, mulberry32(1));
+    expect(r.alloc['G']['A']).toBe(1.6);
+    expect(r.availFinal['A']).toBe(0);
+  });
+
+  it('produto com origem inteira nunca vira quebrado, mesmo com pct fracionário', () => {
+    const stock: Produto[] = [{ codigo: 'A', produto: 'p', estoque: 7, pu: 10 }];
+    const rules: Regra[] = [{ id: '1', tipo: 'percentual', cliente: 'G', pct: 50, scope: 'all', codigos: [] }];
+    const r = compute(stock, ['G'], rules, mulberry32(1));
+    expect(r.alloc['G']['A']).toBe(3); // floor(7*0.5) = 3, nunca 3.5
+    expect(Number.isInteger(r.alloc['G']['A'])).toBe(true);
+  });
+
+  it('meta de valor usando um produto de origem quebrada: leva tudo ou nada, nunca fatia', () => {
+    const stock: Produto[] = [
+      { codigo: 'A', produto: 'p', estoque: 1.6, pu: 100 },
+      { codigo: 'B', produto: 'q', estoque: 50, pu: 10 },
+    ];
+    const rules: Regra[] = [{ id: '1', tipo: 'meta', cliente: 'G', valor: 500, scope: 'all', codigos: [], tetoReal: false }];
+    const r = compute(stock, ['G'], rules, mulberry32(1));
+    // A (origem quebrada) ou não aparece, ou aparece com o valor exato 1.6 — nunca uma fatia
+    if (r.alloc['G']['A'] != null) expect(r.alloc['G']['A']).toBe(1.6);
+    expect(Number.isInteger(r.alloc['G']['B'])).toBe(true);
+  });
+
+  it('divisão igual: código de origem quebrada vai inteiro para um único cliente, não é fatiado', () => {
+    const stock: Produto[] = [{ codigo: 'A', produto: 'p', estoque: 1.6, pu: 10 }];
+    const rules: Regra[] = [{ id: '1', tipo: 'igual', clientes: ['G', 'R'], variacao: 0 }];
+    const r = compute(stock, ['G', 'R'], rules, mulberry32(1));
+    const soma = (r.alloc['G']?.['A'] || 0) + (r.alloc['R']?.['A'] || 0);
+    expect(soma).toBe(1.6);
+    // vai inteiro para um só: nenhum dos dois tem uma fatia parcial
+    const valores = [r.alloc['G']?.['A'] || 0, r.alloc['R']?.['A'] || 0];
+    expect(valores.some((v) => v === 1.6)).toBe(true);
+    expect(valores.some((v) => v > 0 && v !== 1.6)).toBe(false);
   });
 });

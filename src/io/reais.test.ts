@@ -44,11 +44,14 @@ describe('Maino real — Relatório de Produtos Estoque', () => {
     });
   });
 
-  it('bate com os totais da operação (doc 03): 76 produtos, 35.072 un., ~R$ 261.555', () => {
+  it('bate com os totais da operação (doc 03): 76 produtos, 35.071,6 un., ~R$ 261.499,26', () => {
+    // WM1-72 já vem com 155,6 na planilha real — não é arredondado (doc 04 §exceção).
+    // O total em valor era antes calculado com o estoque arredondado (156): a
+    // correção da quantidade muda o valor total em ~R$56 (0,4 un. × PU de WM1-72).
     const produtos = estoqueReal();
     expect(produtos).toHaveLength(76);
-    expect(produtos.reduce((s, p) => s + p.estoque, 0)).toBe(35072);
-    expect(produtos.reduce((s, p) => s + p.estoque * p.pu, 0)).toBeCloseTo(261555.4, 1);
+    expect(produtos.reduce((s, p) => s + p.estoque, 0)).toBeCloseTo(35071.6, 1);
+    expect(produtos.reduce((s, p) => s + p.estoque * p.pu, 0)).toBeCloseTo(261499.26, 1);
   });
 
   it('limpa o nome duplicado de todos os produtos', () => {
@@ -59,9 +62,12 @@ describe('Maino real — Relatório de Produtos Estoque', () => {
     }
   });
 
-  it('quantidade com decimal é arredondada e o PU mantém as 4 casas', () => {
+  it('quantidade quebrada que já vem da origem é preservada (WM1-72) e o PU mantém as 4 casas', () => {
     const produtos = estoqueReal();
-    expect(produtos.every((p) => Number.isInteger(p.estoque))).toBe(true);
+    // só WM1-72 vem quebrado na planilha real — o resto continua inteiro
+    const naoInteiros = produtos.filter((p) => !Number.isInteger(p.estoque));
+    expect(naoInteiros.map((p) => p.codigo)).toEqual(['WM1-72']);
+    expect(naoInteiros[0].estoque).toBeCloseTo(155.6, 4);
     expect(produtos.find((p) => p.codigo === 'TP-1911')?.pu).toBeCloseTo(210.4557, 4);
   });
 });

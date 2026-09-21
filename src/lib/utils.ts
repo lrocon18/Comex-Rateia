@@ -28,6 +28,17 @@ export function formatInteger(value: number): string {
   }).format(value);
 }
 
+/**
+ * Quantidade de produto: normalmente inteira, mas mostra as casas decimais
+ * quando o valor já veio quebrado da origem (doc 04 §exceção) — nunca
+ * arredonda 1,6 pra "2" na tela.
+ */
+export function formatQuantity(value: number): string {
+  return new Intl.NumberFormat('pt-BR', {
+    maximumFractionDigits: Number.isInteger(value) ? 0 : 2,
+  }).format(value);
+}
+
 export function formatPercent(value: number): string {
   return new Intl.NumberFormat('pt-BR', {
     style: 'percent',

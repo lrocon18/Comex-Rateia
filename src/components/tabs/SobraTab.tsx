@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { formatCurrency, formatCurrency4, formatInteger } from '@/lib/utils';
+import { formatCurrency, formatCurrency4, formatQuantity } from '@/lib/utils';
 
 export function SobraTab() {
   const stock = useAppStore((s) => s.stock);
@@ -79,7 +79,7 @@ export function SobraTab() {
                 {prod[c]}
               </TableCell>
               <TableCell className="num text-right font-semibold text-[var(--color-signal-ok)]">
-                {formatInteger(result.leftover[c])}
+                {formatQuantity(result.leftover[c])}
               </TableCell>
               <TableCell className="num text-right text-[var(--color-graphite)]">
                 {formatCurrency4(pu[c])}

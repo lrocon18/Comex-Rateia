@@ -6,7 +6,7 @@ import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/ca
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { formatCurrency, formatCurrency4, formatInteger } from '@/lib/utils';
+import { formatCurrency, formatCurrency4, formatQuantity } from '@/lib/utils';
 
 export function EstoqueTab() {
   const stock = useAppStore((s) => s.stock);
@@ -64,16 +64,16 @@ export function EstoqueTab() {
                 <TableCell className="max-w-[300px] truncate" title={s.produto}>
                   {s.produto}
                 </TableCell>
-                <TableCell className="num text-right">{formatInteger(s.estoque)}</TableCell>
+                <TableCell className="num text-right">{formatQuantity(s.estoque)}</TableCell>
                 <TableCell className={`num text-right ${d ? '' : 'text-[var(--color-graphite)]'}`}>
-                  {formatInteger(d)}
+                  {formatQuantity(d)}
                 </TableCell>
                 <TableCell
                   className={`num text-right font-semibold ${
                     zerado ? 'font-normal text-[var(--color-graphite)]' : 'text-[var(--color-signal-ok)]'
                   }`}
                 >
-                  {formatInteger(Math.max(0, disp))}
+                  {formatQuantity(Math.max(0, disp))}
                 </TableCell>
                 <TableCell className="num text-right text-[var(--color-graphite)]">
                   {formatCurrency4(s.pu)}

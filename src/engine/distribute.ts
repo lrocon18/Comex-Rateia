@@ -31,12 +31,19 @@ export function compute(
   const avail: Saldo = iniMap(stock);
   const alloc: Alloc = {};
 
+  // Quantidade quebrada só é permitida quando já veio assim na planilha de
+  // origem (doc 04 §exceção). Para todo o resto, a quantidade distribuída
+  // nunca pode ser fracionária — nem para se aproximar de um valor-alvo.
+  const origInt: Record<string, boolean> = {};
+  for (const s of stock) origInt[s.codigo] = Number.isInteger(s.estoque);
+
   const ensure = (c: string) => {
     if (!alloc[c]) alloc[c] = {};
   };
   const give = (cl: string, c: string, q: number) => {
     if (avail[c] == null) return; // código fora do estoque: ignora
-    q = Math.min(Math.floor(q), avail[c]);
+    q = Math.min(q, avail[c]);
+    if (origInt[c] !== false) q = Math.floor(q);
     if (q <= 0) return;
     ensure(cl);
     alloc[cl][c] = (alloc[cl][c] || 0) + q;
@@ -63,7 +70,7 @@ export function compute(
   for (const r of rules) {
     if (r.tipo === 'meta') {
       const cods = scopeCods(r).filter((c) => avail[c] > 0);
-      const { take } = metaFill(cods, avail, pu, r.valor, r.tetoReal);
+      const { take } = metaFill(cods, avail, pu, r.valor, origInt, r.tetoReal);
       for (const c of Object.keys(take)) give(r.cliente, c, take[c]);
     }
   }
@@ -71,7 +78,7 @@ export function compute(
   for (const r of rules) {
     if (r.tipo === 'igual') {
       const cls = r.clientes && r.clientes.length ? r.clientes : clients.slice();
-      const res = splitEqual(cls, avail, r.variacao, rng);
+      const res = splitEqual(cls, avail, r.variacao, rng, origInt);
       for (const cl in res)
         for (const c in res[cl]) {
           if (res[cl][c] > 0) {

@@ -77,6 +77,14 @@ describe('produtosFromRows — import Maino', () => {
     expect(produtos[0]).toMatchObject({ codigo: '46025', produto: 'Disco', estoque: 600, pu: 1.2193 });
     expect(produtos[1]).toMatchObject({ codigo: 'WM1-51', estoque: 480, pu: 5.5863 });
   });
+
+  it('não arredonda quantidade quebrada que já vem da origem (doc 04 §exceção)', () => {
+    const rows = [
+      { 'Código': 'WM1-72', 'Produto': 'Tecido', 'Qtde Disponível': '155,6', 'PU Saída (R$)': '10' },
+    ];
+    const { produtos } = produtosFromRows(rows);
+    expect(produtos[0].estoque).toBeCloseTo(155.6, 4);
+  });
 });
 
 describe('parseSheetToPedido — planilha do cliente', () => {
