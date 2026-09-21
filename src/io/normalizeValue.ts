@@ -2,9 +2,15 @@
 // Ex.: "maximo de R$5mil" -> 5000 · "R$45mil" -> 45000 · "15k" -> 15000 ·
 //      "13k" -> 13000 · "sem nota" -> { semNota: true }
 
+import type { ValorAlvoUnidade } from '@/types';
+
 export interface ValorNormalizado {
   valor: number | null;
   semNota: boolean;
+}
+
+export interface ValorAlvoLido extends ValorNormalizado {
+  unidade: ValorAlvoUnidade;
 }
 
 /** Converte "2,82" / "1.234,56" / "1234.56" em número. */
@@ -45,4 +51,31 @@ export function normalizeValor(raw: unknown): ValorNormalizado {
   if (!Number.isFinite(n)) return { valor: null, semNota: false };
   if (m[2] === 'mil' || m[2] === 'k') n *= 1000;
   return { valor: n, semNota: false };
+}
+
+/**
+ * Lê o valor-alvo de uma célula (em especial C3): vazio, reais ou percentual.
+ * "15%" / "15 %" → 15 e unidade `pct`. Sem `%`, segue `normalizeValor` em reais.
+ */
+export function parseValorAlvoCelula(raw: unknown): ValorAlvoLido {
+  if (raw == null) return { valor: null, unidade: 'reais', semNota: false };
+  const s = String(raw).trim();
+  if (!s) return { valor: null, unidade: 'reais', semNota: false };
+
+  const lower = s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
+  if (lower.includes('sem nota') || lower.includes('sem nf')) {
+    return { valor: null, unidade: 'reais', semNota: true };
+  }
+
+  if (/%/.test(s)) {
+    const n = parseDecimal(s.replace(/%/g, ''));
+    if (!Number.isFinite(n)) return { valor: null, unidade: 'pct', semNota: false };
+    return { valor: n, unidade: 'pct', semNota: false };
+  }
+
+  const v = normalizeValor(raw);
+  return { valor: v.valor, unidade: 'reais', semNota: v.semNota };
 }

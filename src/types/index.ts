@@ -90,12 +90,17 @@ export interface ItemPedido {
   qts: number;
 }
 
+/** Unidade do valor-alvo lido da planilha ou escolhido na tela. */
+export type ValorAlvoUnidade = 'reais' | 'pct';
+
 /** Bloco de um cliente/operação lido de uma aba da planilha do cliente. */
 export interface PedidoCliente {
   aba: string;
   nome: string;
   cnpj: string;
   valorAlvo: number | null; // null = "sem nota" / não informado
+  /** `pct` gera regra percentual; `reais` gera meta em R$. Ausente = reais. */
+  valorAlvoUnidade?: ValorAlvoUnidade;
   semNota: boolean;
   itens: ItemPedido[];
 }

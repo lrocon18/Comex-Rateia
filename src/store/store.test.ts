@@ -16,6 +16,7 @@ function draftDeAba(nome: string): PedidoDraft {
     pedido,
     itens: [{ codigoPedido: 'A-1', desc: 'peça a', qts: 3, produto: PRODUTOS[0], via: 'codigo' }],
     valorAlvo: 5000,
+    valorAlvoUnidade: 'reais',
     daMemoria: false,
     mapAberto: false,
     itensAberto: false,
@@ -104,6 +105,35 @@ describe('rascunhos das telas — trocar de passo não perde o preenchido', () =
     expect(s.drafts.pedidos).toBeNull();
     expect(s.clients).toEqual(['WM']);
     expect(s.rules).toHaveLength(1);
+    expect(s.rules[0]).toMatchObject({ tipo: 'meta', valor: 5000, cliente: 'WM' });
+  });
+
+  it('applyPedidos com valor-alvo em % gera regra percentual', () => {
+    useAppStore.getState().applyPedidos([
+      {
+        pedido: {
+          aba: 'WM',
+          nome: 'WM',
+          cnpj: '',
+          valorAlvo: 15,
+          valorAlvoUnidade: 'pct',
+          semNota: false,
+          itens: [],
+        },
+        matches: [
+          {
+            item: { codigo: 'A-1', desc: 'peça a', qts: 3 },
+            produto: PRODUTOS[0],
+            via: 'codigo',
+            score: 1,
+            candidatos: [],
+          },
+        ],
+      },
+    ]);
+
+    const r = useAppStore.getState().rules[0];
+    expect(r).toMatchObject({ tipo: 'percentual', pct: 15, cliente: 'WM', scope: 'sel' });
   });
 
   it('substituir o Maino descarta a conferência e os produtos escolhidos na regra', () => {

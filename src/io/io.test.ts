@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as XLSX from 'xlsx';
 import type { Produto } from '@/types';
-import { normalizeValor, parseDecimal } from './normalizeValue';
+import { normalizeValor, parseDecimal, parseValorAlvoCelula } from './normalizeValue';
 import { detectColumns } from './columnMap';
 import { subCodes, matchPedido, buildCodeIndex } from './matching';
 import { normalizeCnpj, parseSheet, parseSheetToPedido, pedidosFromWorkbook } from './importCliente';
@@ -25,6 +25,24 @@ describe('normalizeValor — valores informais (doc 03)', () => {
     const r = normalizeValor('sem nota');
     expect(r.semNota).toBe(true);
     expect(r.valor).toBeNull();
+  });
+});
+
+describe('parseValorAlvoCelula — C3 em reais ou %', () => {
+  it('vazio fica vazio, em reais', () => {
+    expect(parseValorAlvoCelula('')).toEqual({ valor: null, unidade: 'reais', semNota: false });
+    expect(parseValorAlvoCelula(null)).toEqual({ valor: null, unidade: 'reais', semNota: false });
+  });
+
+  it('porcentagem com o sinal %', () => {
+    expect(parseValorAlvoCelula('15%')).toEqual({ valor: 15, unidade: 'pct', semNota: false });
+    expect(parseValorAlvoCelula('15,5 %')).toMatchObject({ valor: 15.5, unidade: 'pct' });
+  });
+
+  it('reais sem %', () => {
+    expect(parseValorAlvoCelula(5000)).toEqual({ valor: 5000, unidade: 'reais', semNota: false });
+    expect(parseValorAlvoCelula('R$ 1.234,56')).toMatchObject({ valor: 1234.56, unidade: 'reais' });
+    expect(parseValorAlvoCelula('15k')).toMatchObject({ valor: 15000, unidade: 'reais' });
   });
 });
 
@@ -204,6 +222,41 @@ describe('cabeçalho A3 vs rótulo CNPJ em B1', () => {
       ['A-1', 'peça', '2'],
     ])!;
     expect(pedido.nome).toBe('ACME LTDA');
+  });
+
+  it('C3 em % vira valor-alvo percentual', () => {
+    const pedido = parseSheetToPedido('ABA', [
+      ['Cliente', 'CNPJ'],
+      ['', '12.345.678/0001-90'],
+      ['ACME LTDA', '', '15%'],
+      ['Ref. Mercadoria', 'Descricao', 'Qts'],
+      ['A-1', 'peça', '2'],
+    ])!;
+    expect(pedido.valorAlvo).toBe(15);
+    expect(pedido.valorAlvoUnidade).toBe('pct');
+  });
+
+  it('C3 em reais vira valor-alvo em reais', () => {
+    const pedido = parseSheetToPedido('ABA', [
+      ['Cliente', 'CNPJ'],
+      ['', '12.345.678/0001-90'],
+      ['ACME LTDA', '', 8000],
+      ['Ref. Mercadoria', 'Descricao', 'Qts'],
+      ['A-1', 'peça', '2'],
+    ])!;
+    expect(pedido.valorAlvo).toBe(8000);
+    expect(pedido.valorAlvoUnidade).toBe('reais');
+  });
+
+  it('C3 vazio no molde com nome em A3 deixa o valor-alvo vazio', () => {
+    const pedido = parseSheetToPedido('ABA', [
+      ['Cliente', 'CNPJ'],
+      ['', '12.345.678/0001-90'],
+      ['ACME LTDA', '', ''],
+      ['Ref. Mercadoria', 'Descricao', 'Qts'],
+      ['A-1', 'peça', '2'],
+    ])!;
+    expect(pedido.valorAlvo).toBeNull();
   });
 });
 

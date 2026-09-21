@@ -1,7 +1,7 @@
-import type { WorkBook } from 'xlsx';
-import type { ItemPedido, PedidoCliente } from '@/types';
+import type { WorkBook, WorkSheet } from 'xlsx';
+import type { ItemPedido, PedidoCliente, ValorAlvoUnidade } from '@/types';
 import { type Campo, detectColumns, normalizeHeader } from './columnMap';
-import { normalizeValor, parseDecimal } from './normalizeValue';
+import { normalizeValor, parseDecimal, parseValorAlvoCelula } from './normalizeValue';
 
 /** Campo -> cabeçalho que o representa naquela aba. */
 export type MapaColunas = Partial<Record<Campo, string>>;
@@ -89,11 +89,13 @@ function parseHeaderBlock(block: Row[]): {
   nome: string;
   cnpj: string;
   valorAlvo: number | null;
+  valorAlvoUnidade: ValorAlvoUnidade;
   semNota: boolean;
 } {
   let cnpj = '';
   let nome = '';
   let valorAlvo: number | null = null;
+  const valorAlvoUnidade: ValorAlvoUnidade = 'reais';
   let semNota = false;
 
   for (const row of block) {
@@ -132,7 +134,7 @@ function parseHeaderBlock(block: Row[]): {
     }
   }
 
-  return { nome: pareceNomeCliente(nome) ? nome : '', cnpj, valorAlvo, semNota };
+  return { nome: pareceNomeCliente(nome) ? nome : '', cnpj, valorAlvo, valorAlvoUnidade, semNota };
 }
 
 /** Lê os itens da tabela a partir da linha seguinte ao header, pelo mapa dado. */
@@ -197,17 +199,29 @@ export function parseSheet(aba: string, rows: Row[], opts: ParseSheetOpts = {}):
     if (salvo && headers.includes(salvo)) map[campo] = salvo;
   }
 
-  let { nome, cnpj, valorAlvo, semNota } = parseHeaderBlock(rows.slice(0, headerIdx));
+  let { nome, cnpj, valorAlvo, valorAlvoUnidade, semNota } = parseHeaderBlock(rows.slice(0, headerIdx));
   // layout fixo do molde: A3 = nome do cliente, B1 = rótulo "CNPJ"
   if (!nome && headerIdx !== 2) {
     const a3 = cell(rows[2] || [], 0);
     if (pareceNomeCliente(a3)) nome = a3;
   }
+  // C3 = valor-alvo (reais ou %) só quando a linha 3 ainda é cabeçalho, não a tabela.
+  if (headerIdx > 2) {
+    const c3 = parseValorAlvoCelula(rows[2]?.[2]);
+    if (c3.valor != null || c3.semNota) {
+      valorAlvo = c3.valor;
+      valorAlvoUnidade = c3.unidade;
+      if (c3.semNota) semNota = true;
+    } else if (pareceNomeCliente(cell(rows[2] || [], 0)) && !cell(rows[2] || [], 2)) {
+      // molde novo (nome em A3): C3 vazio é vazio, não herda valor de outro canto do cabeçalho
+      valorAlvo = null;
+    }
+  }
   const itens = parseItens(rows, headerIdx, headers, map);
 
   return {
     aba,
-    pedido: { aba, nome: nome || aba, cnpj, valorAlvo, semNota, itens },
+    pedido: { aba, nome: nome || aba, cnpj, valorAlvo, valorAlvoUnidade, semNota, itens },
     headers,
     headerIdx,
     map,
@@ -224,6 +238,30 @@ export interface AbaRows {
   rows: Row[];
 }
 
+/**
+ * C3 formatado como % no Excel vira fração (0,15). Regrava a célula como "15%"
+ * para o parser do valor-alvo não tratar como reais.
+ */
+function overlayC3Percentual(ws: WorkSheet, rows: Row[]): void {
+  const c = ws.C3;
+  if (!c) return;
+  const w = String(c.w ?? '');
+  const z = String(c.z ?? '');
+  const isPct = w.includes('%') || z.includes('%');
+  if (!isPct) return;
+  if (!rows[2]) rows[2] = [];
+  const row = rows[2];
+  while (row.length < 3) row.push('');
+  if (w.includes('%')) {
+    row[2] = w;
+    return;
+  }
+  if (typeof c.v === 'number' && Number.isFinite(c.v)) {
+    const pct = Number((c.v * 100).toPrecision(12));
+    row[2] = `${pct}%`;
+  }
+}
+
 /** Linhas cruas de cada aba, para a tela reprocessar sem reler o arquivo. */
 export async function rowsFromWorkbook(wb: WorkBook): Promise<AbaRows[]> {
   const XLSX = await import('./sheetjs');
@@ -231,7 +269,9 @@ export async function rowsFromWorkbook(wb: WorkBook): Promise<AbaRows[]> {
   for (const aba of wb.SheetNames) {
     const ws = wb.Sheets[aba];
     if (!ws) continue;
-    abas.push({ aba, rows: XLSX.utils.sheet_to_json<Row>(ws, { header: 1, defval: '' }) });
+    const rows = XLSX.utils.sheet_to_json<Row>(ws, { header: 1, defval: '' });
+    overlayC3Percentual(ws, rows);
+    abas.push({ aba, rows });
   }
   return abas;
 }

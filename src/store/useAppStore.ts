@@ -1,15 +1,7 @@
 import { create } from 'zustand';
 import { compute } from '@/engine';
 import type { MatchItem, MatchVia, Row, SheetParse } from '@/io';
-import type {
-  Escopo,
-  PedidoCliente,
-  Produto,
-  Regra,
-  RegraInput,
-  RegraTipo,
-  Result,
-} from '@/types';
+import type { Escopo, PedidoCliente, Produto, Regra, RegraInput, RegraTipo, Result, ValorAlvoUnidade } from '@/types';
 import {
   loadCurrent,
   saveCurrent,
@@ -44,6 +36,7 @@ export interface PedidoDraft {
   pedido: PedidoCliente;
   itens: ItemDraft[];
   valorAlvo: number | null;
+  valorAlvoUnidade: ValorAlvoUnidade;
   /** o mapa veio da memória do cliente (padrão salvo) */
   daMemoria: boolean;
   mapAberto: boolean;
@@ -248,15 +241,27 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (!clients.includes(nome)) clients.push(nome);
         const codigos = matches.filter((m) => m.produto).map((m) => m.produto!.codigo);
         if (pedido.valorAlvo != null && codigos.length) {
-          rules.push({
-            id: uid(),
-            tipo: 'meta',
-            cliente: nome,
-            valor: pedido.valorAlvo,
-            scope: 'sel',
-            codigos: [...new Set(codigos)],
-            tetoReal: false,
-          });
+          const unidade = pedido.valorAlvoUnidade ?? 'reais';
+          if (unidade === 'pct') {
+            rules.push({
+              id: uid(),
+              tipo: 'percentual',
+              cliente: nome,
+              pct: pedido.valorAlvo,
+              scope: 'sel',
+              codigos: [...new Set(codigos)],
+            });
+          } else {
+            rules.push({
+              id: uid(),
+              tipo: 'meta',
+              cliente: nome,
+              valor: pedido.valorAlvo,
+              scope: 'sel',
+              codigos: [...new Set(codigos)],
+              tetoReal: false,
+            });
+          }
         }
       }
       // conferência consumida: o rascunho das abas sai de cena

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { ArrowLeftRight, Trash2 } from 'lucide-react';
 import { useAppStore, type PedidoConfirmado, type PedidoDraft } from '@/store/useAppStore';
 import { getMapping, saveMapping } from '@/store/db';
 import {
@@ -73,6 +73,7 @@ export function ImportarTab() {
       nome: parse.aba,
       cnpj: '',
       valorAlvo: null,
+      valorAlvoUnidade: 'reais' as const,
       semNota: false,
       itens: [],
     };
@@ -89,6 +90,7 @@ export function ImportarTab() {
       })),
       // valor-alvo editado na mão sobrevive ao reprocessamento
       valorAlvo: base ? base.valorAlvo : pedido.valorAlvo,
+      valorAlvoUnidade: base ? base.valorAlvoUnidade : (pedido.valorAlvoUnidade ?? 'reais'),
       daMemoria: base?.daMemoria ?? false,
       mapAberto: base?.mapAberto ?? parse.uncertain.length > 0,
       itensAberto: base?.itensAberto ?? false,
@@ -175,6 +177,15 @@ export function ImportarTab() {
   const setValorAlvo = (di: number, v: number | null) =>
     setDrafts((ds) => (ds ? ds.map((d, i) => (i === di ? { ...d, valorAlvo: v } : d)) : ds));
 
+  const toggleValorAlvoUnidade = (di: number) =>
+    setDrafts((ds) =>
+      ds
+        ? ds.map((d, i) =>
+            i === di ? { ...d, valorAlvoUnidade: d.valorAlvoUnidade === 'pct' ? 'reais' : 'pct' } : d,
+          )
+        : ds,
+    );
+
   const fecharRemover = () => setRemoverDi(null);
 
   /** Tira o bloco da conferência: esse cliente não vira regra nem entra na exportação. */
@@ -201,7 +212,7 @@ export function ImportarTab() {
     if (!drafts) return;
     const usados = drafts.filter((d) => d.itens.length);
     const confirmados: PedidoConfirmado[] = usados.map((d) => ({
-      pedido: { ...d.pedido, valorAlvo: d.valorAlvo },
+      pedido: { ...d.pedido, valorAlvo: d.valorAlvo, valorAlvoUnidade: d.valorAlvoUnidade },
       matches: d.itens.map((r) => ({
         item: { codigo: r.codigoPedido, desc: r.desc, qts: r.qts },
         produto: r.produto,
@@ -289,16 +300,35 @@ export function ImportarTab() {
                   )}
                 </CardDescription>
               </div>
-              <label className="flex items-center gap-2">
+              <div className="flex items-center gap-2">
                 <span className="label-xs">Valor-alvo</span>
-                <Input
-                  type="number"
-                  className="h-8 w-36"
-                  value={d.valorAlvo ?? ''}
-                  placeholder="sem meta"
-                  onChange={(e) => setValorAlvo(di, e.target.value === '' ? null : Number(e.target.value))}
-                />
-              </label>
+                <span className="flex items-center">
+                  <Input
+                    type="number"
+                    className="h-8 w-28 rounded-r-none"
+                    value={d.valorAlvo ?? ''}
+                    placeholder={d.valorAlvoUnidade === 'pct' ? '%' : 'R$'}
+                    onChange={(e) => setValorAlvo(di, e.target.value === '' ? null : Number(e.target.value))}
+                    aria-label="Valor-alvo"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1 rounded-l-none border-l-0 px-2"
+                    aria-label={
+                      d.valorAlvoUnidade === 'pct' ? 'Trocar valor-alvo para reais' : 'Trocar valor-alvo para porcentagem'
+                    }
+                    title={d.valorAlvoUnidade === 'pct' ? 'Em %, clique para reais' : 'Em reais, clique para %'}
+                    onClick={() => toggleValorAlvoUnidade(di)}
+                  >
+                    <span className="num text-[0.6875rem] font-semibold">
+                      {d.valorAlvoUnidade === 'pct' ? '%' : 'R$'}
+                    </span>
+                    <ArrowLeftRight className="h-3.5 w-3.5" />
+                  </Button>
+                </span>
+              </div>
             </CardHeader>
 
             <div className="border-b border-[var(--color-rule)] bg-[var(--color-paper)] px-4 py-2.5">
