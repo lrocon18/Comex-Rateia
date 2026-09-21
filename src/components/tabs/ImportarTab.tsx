@@ -1,4 +1,5 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
+import { Trash2 } from 'lucide-react';
 import { useAppStore, type PedidoConfirmado, type PedidoDraft } from '@/store/useAppStore';
 import { getMapping, saveMapping } from '@/store/db';
 import {
@@ -18,6 +19,14 @@ import { Select } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Status, type Tone } from '@/components/ui/status';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { formatInteger } from '@/lib/utils';
 
 const VIA: Record<MatchVia, { txt: string; tone: Tone }> = {
@@ -54,6 +63,7 @@ export function ImportarTab() {
   const setDrafts = useAppStore((s) => s.setPedidosDraft);
   const patchDrafts = useAppStore((s) => s.patchDrafts);
   const fileInput = useRef<HTMLInputElement>(null);
+  const [removerDi, setRemoverDi] = useState<number | null>(null);
 
   const setErro = (pedidosErro: string | null) => patchDrafts({ pedidosErro });
 
@@ -161,6 +171,28 @@ export function ImportarTab() {
   const setValorAlvo = (di: number, v: number | null) =>
     setDrafts((ds) => (ds ? ds.map((d, i) => (i === di ? { ...d, valorAlvo: v } : d)) : ds));
 
+  const fecharRemover = () => setRemoverDi(null);
+
+  /** Tira o bloco da conferência: esse cliente não vira regra nem entra na exportação. */
+  const confirmarRemover = () => {
+    if (removerDi == null) return;
+    const di = removerDi;
+    setRemoverDi(null);
+    const atuais = drafts;
+    if (!atuais) return;
+    const next = atuais.filter((_, i) => i !== di);
+    patchDrafts({
+      pedidos: next.length ? next : null,
+      pedidosErro: next.some((d) => d.itens.length)
+        ? null
+        : next.length
+          ? 'Não reconheci a tabela de produtos em nenhuma aba. Escolha a linha do cabeçalho e as colunas abaixo.'
+          : null,
+    });
+  };
+
+  const clienteARemover = removerDi != null ? drafts?.[removerDi] : undefined;
+
   const aplicar = async () => {
     if (!drafts) return;
     const usados = drafts.filter((d) => d.itens.length);
@@ -224,6 +256,14 @@ export function ImportarTab() {
                 <CardTitle className="flex items-center gap-2">
                   {d.pedido.nome}
                   {d.daMemoria && <Badge variant="accent">padrão salvo</Badge>}
+                  <button
+                    type="button"
+                    aria-label={`Remover o cliente mapeado ${d.pedido.nome}`}
+                    onClick={() => setRemoverDi(di)}
+                    className="rounded-md p-1 text-[var(--color-signal-risk)] transition-colors hover:bg-[var(--color-signal-risk-wash)]"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </CardTitle>
                 <CardDescription className="flex flex-wrap items-center gap-x-2">
                   <span className="code">{d.parse.aba}</span>
@@ -377,6 +417,40 @@ export function ImportarTab() {
           </CardFooter>
         </Card>
       )}
+
+      <Dialog
+        open={removerDi != null}
+        onClose={fecharRemover}
+        labelledBy="remover-cliente-mapeado-title"
+        className="max-w-md"
+      >
+        <DialogHeader onClose={fecharRemover}>
+          <DialogTitle id="remover-cliente-mapeado-title">Remover cliente mapeado</DialogTitle>
+        </DialogHeader>
+        <DialogContent>
+          <DialogDescription className="text-sm text-[var(--color-ink)]">
+            Você realmente quer remover o cliente mapeado
+            {clienteARemover ? (
+              <>
+                {' '}
+                <span className="font-semibold">{clienteARemover.pedido.nome}</span>
+              </>
+            ) : null}
+            ? Ele não será gerado nem exportado nesta planilha.
+          </DialogDescription>
+        </DialogContent>
+        <DialogFooter>
+          <Button variant="outline" onClick={fecharRemover}>
+            NÃO
+          </Button>
+          <Button
+            className="bg-[var(--color-signal-risk)] text-white hover:bg-[var(--color-signal-risk)]"
+            onClick={confirmarRemover}
+          >
+            SIM
+          </Button>
+        </DialogFooter>
+      </Dialog>
     </div>
   );
 }
