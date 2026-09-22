@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import * as XLSX from 'xlsx';
 import type { Produto } from '@/types';
 import { normalizeValor, parseDecimal, parseValorAlvoCelula } from './normalizeValue';
 import { detectColumns, detectExportColumns } from './columnMap';
 import { avisosMapeamento, buildPedidosWorkbook, type ExportMolde } from './exportTemplate';
+import { buildSobraWorkbook } from './exportSobra';
 import { subCodes, matchPedido, buildCodeIndex } from './matching';
 import { normalizeCnpj, parseSheet, parseSheetToPedido, pedidosFromWorkbook } from './importCliente';
 import { cleanMainoName, produtosFromRows } from './importMaino';
@@ -466,5 +469,32 @@ describe('buildPedidosWorkbook — um arquivo, aba por cliente', () => {
   it('não exporta se código ou quantidade ficarem sem coluna', () => {
     expect(avisosMapeamento({ pu: 'PU' }).join(' ')).toMatch(/Código/);
     expect(avisosMapeamento({ pu: 'PU' }).join(' ')).toMatch(/Quantidade/);
+  });
+});
+
+describe('buildSobraWorkbook — molde CLIENTE 1', () => {
+  const bytes = new Uint8Array(readFileSync(resolve('src/assets/template-pedido-cliente.xlsx')));
+
+  it('preenche Código, Quantidade e Valor Unitário a partir da linha 5', async () => {
+    const stock: Produto[] = [
+      { codigo: 'A-1', produto: 'peça a', estoque: 10, pu: 2.5 },
+      { codigo: 'B-2', produto: 'peça b', estoque: 3, pu: 10 },
+    ];
+    const wb = await buildSobraWorkbook(
+      stock,
+      { alloc: {}, leftover: { 'A-1': 4, 'B-2': 1 }, availFinal: { 'A-1': 4, 'B-2': 1 } },
+      bytes,
+    );
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    expect(ws.B1.v).toBe('Produtos');
+    expect(ws.A4.v).toBe('Código');
+    expect(ws.B4.v).toBe('Quantidade');
+    expect(ws.C4.v).toBe('Valor Unitário');
+    expect(ws.A5.v).toBe('A-1');
+    expect(ws.B5.v).toBe(4);
+    expect(ws.C5.v).toBe(2.5);
+    expect(ws.A6.v).toBe('B-2');
+    expect(ws.B6.v).toBe(1);
+    expect(ws.C6.v).toBe(10);
   });
 });

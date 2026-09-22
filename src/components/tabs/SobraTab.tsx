@@ -1,6 +1,6 @@
 import { useAppStore } from '@/store/useAppStore';
 import { prodMap, puMap } from '@/engine';
-import { exportXlsx } from '@/io';
+import { exportSobra } from '@/io';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,7 +47,7 @@ export function SobraTab() {
         <div className="space-y-1">
           <CardTitle>Saldo para utilização</CardTitle>
           <CardDescription>
-            só os produtos que ainda têm saldo — pronto para o cliente de sobra
+            só os produtos que ainda têm saldo — no molde oficial (Código, Quantidade, Valor Unitário)
           </CardDescription>
         </div>
         <div className="flex items-center gap-4">
@@ -55,8 +55,8 @@ export function SobraTab() {
             <div className="label-xs">Total da sobra</div>
             <div className="num mt-0.5 text-[1.0625rem] font-semibold leading-[1.3]">{formatCurrency(val)}</div>
           </div>
-          <Button variant="outline" onClick={() => void exportXlsx(stock, result)}>
-            Exportar .xlsx
+          <Button variant="outline" onClick={() => void exportSobra(stock, result)} disabled={cods.length === 0}>
+            Exportar planilha
           </Button>
         </div>
       </CardHeader>
