@@ -7,7 +7,6 @@ import {
   detectExportColumns,
   type CampoExport,
 } from './columnMap';
-import { sheetName } from './exportXlsx';
 
 export interface ExportMolde {
   bytes: number[];
@@ -73,92 +72,123 @@ export async function lerMoldeExportacao(file: File): Promise<ExportMolde> {
   };
 }
 
-function cloneSheet(ws: WorkSheet): WorkSheet {
-  return JSON.parse(JSON.stringify(ws)) as WorkSheet;
-}
-
 function colIndex(headers: string[], header: string | undefined): number {
   if (!header) return -1;
   return headers.indexOf(header);
 }
 
-/** Um workbook: aba-modelo clonada uma vez por cliente, só células de dado preenchidas. */
-export async function buildPedidosWorkbook(
+export function clienteTemAlocacao(result: Result, cliente: string): boolean {
+  return Object.values(result.alloc[cliente] || {}).some((q) => q > 0);
+}
+
+/** Clientes com produto alocado, na ordem da distribuição. */
+export function clientesExportaveis(result: Result): string[] {
+  return Object.keys(result.alloc).filter((cl) => clienteTemAlocacao(result, cl));
+}
+
+/** Nome de arquivo Windows-safe, único dentro de `used`. */
+export function nomeArquivoPedido(moldeFileName: string, cliente: string, used: Set<string> = new Set()): string {
+  const base = moldeFileName.replace(/\.(xlsx|xls)$/i, '') || 'pedidos';
+  const safe =
+    cliente
+      .replace(/[<>:"/\\|?*]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/[. ]+$/g, '')
+      .slice(0, 80) || 'cliente';
+  let name = `${base}-${safe}.xlsx`;
+  let i = 2;
+  while (used.has(name.toLowerCase())) {
+    name = `${base}-${safe}-${i++}.xlsx`;
+  }
+  used.add(name.toLowerCase());
+  return name;
+}
+
+function preencherAbaCliente(
+  ws: WorkSheet,
+  XLSX: typeof import('./sheetjs'),
   molde: ExportMolde,
   stock: Produto[],
   result: Result,
+  cliente: string,
+) {
+  const pu = puMap(stock);
+  const prod = prodMap(stock);
+  const alloc = result.alloc[cliente] || {};
+  const codigos = Object.keys(alloc)
+    .filter((c) => alloc[c] > 0)
+    .sort();
+  const cnpj = result.notas?.[cliente]?.cnpj || '';
+  const total = clientTotal(stock, result, cliente);
+  const ic = colIndex(molde.headers, molde.map.codigo);
+  const iq = colIndex(molde.headers, molde.map.quantidade);
+  const ipu = colIndex(molde.headers, molde.map.pu);
+  const ip = colIndex(molde.headers, molde.map.produto);
+  const icl = colIndex(molde.headers, molde.map.cliente);
+  const icnpj = colIndex(molde.headers, molde.map.cnpj);
+
+  if (molde.headerIdx > 2) {
+    setCell(ws, XLSX, 2, 0, cliente, 's');
+    setCell(ws, XLSX, 2, 2, total, 'n');
+  }
+
+  codigos.forEach((codigo, i) => {
+    const r = molde.headerIdx + 1 + i;
+    if (ic >= 0) setCell(ws, XLSX, r, ic, codigo, 's');
+    if (iq >= 0) setCell(ws, XLSX, r, iq, alloc[codigo], 'n');
+    if (ipu >= 0) setCell(ws, XLSX, r, ipu, pu[codigo], 'n');
+    if (ip >= 0) setCell(ws, XLSX, r, ip, prod[codigo] || '', 's');
+    if (icl >= 0) setCell(ws, XLSX, r, icl, cliente, 's');
+    if (icnpj >= 0) setCell(ws, XLSX, r, icnpj, cnpj, 's');
+  });
+
+  const last = molde.headerIdx + Math.max(codigos.length, 1);
+  const ref = ws['!ref']
+    ? XLSX.utils.decode_range(ws['!ref'])
+    : { s: { r: 0, c: 0 }, e: { r: last, c: Math.max(molde.headers.length - 1, 0) } };
+  ref.e.r = Math.max(ref.e.r, last);
+  ref.e.c = Math.max(ref.e.c, Math.max(molde.headers.length - 1, 0));
+  ws['!ref'] = XLSX.utils.encode_range(ref);
+}
+
+/** Molde oficial preenchido só com os dados daquele cliente. */
+export async function buildPedidoWorkbook(
+  molde: ExportMolde,
+  stock: Produto[],
+  result: Result,
+  cliente: string,
 ): Promise<WorkBook> {
+  if (!clienteTemAlocacao(result, cliente)) {
+    throw new Error(`Cliente «${cliente}» não tem produtos alocados.`);
+  }
   const XLSX = await import('./sheetjs');
   const wb = XLSX.read(new Uint8Array(molde.bytes), { type: 'array', cellStyles: true });
   const modeloNome = wb.SheetNames[0];
-  const modelo = wb.Sheets[modeloNome];
-  if (!modelo) throw new Error('Molde sem aba utilizável.');
-
-  const extras = wb.SheetNames.slice(1);
-  const extraSheets = Object.fromEntries(extras.map((n) => [n, wb.Sheets[n]]));
-
-  const pu = puMap(stock);
-  const prod = prodMap(stock);
-  const clientes = Object.keys(result.alloc).filter((cl) => Object.values(result.alloc[cl]).some((q) => q > 0));
-  const used = new Set<string>(extras);
-  const out: WorkBook = { SheetNames: [], Sheets: {} };
-
-  for (const cliente of clientes) {
-    const nomeAba = sheetName(cliente, used);
-    const ws = cloneSheet(modelo);
-    const alloc = result.alloc[cliente] || {};
-    const codigos = Object.keys(alloc)
-      .filter((c) => alloc[c] > 0)
-      .sort();
-    const cnpj = result.notas?.[cliente]?.cnpj || '';
-    const total = clientTotal(stock, result, cliente);
-    const ic = colIndex(molde.headers, molde.map.codigo);
-    const iq = colIndex(molde.headers, molde.map.quantidade);
-    const ipu = colIndex(molde.headers, molde.map.pu);
-    const ip = colIndex(molde.headers, molde.map.produto);
-    const icl = colIndex(molde.headers, molde.map.cliente);
-    const icnpj = colIndex(molde.headers, molde.map.cnpj);
-
-    if (molde.headerIdx > 2) {
-      setCell(ws, XLSX, 2, 0, cliente, 's');
-      setCell(ws, XLSX, 2, 2, total, 'n');
-    }
-
-    codigos.forEach((codigo, i) => {
-      const r = molde.headerIdx + 1 + i;
-      if (ic >= 0) setCell(ws, XLSX, r, ic, codigo, 's');
-      if (iq >= 0) setCell(ws, XLSX, r, iq, alloc[codigo], 'n');
-      if (ipu >= 0) setCell(ws, XLSX, r, ipu, pu[codigo], 'n');
-      if (ip >= 0) setCell(ws, XLSX, r, ip, prod[codigo] || '', 's');
-      if (icl >= 0) setCell(ws, XLSX, r, icl, cliente, 's');
-      if (icnpj >= 0) setCell(ws, XLSX, r, icnpj, cnpj, 's');
-    });
-
-    const last = molde.headerIdx + Math.max(codigos.length, 1);
-    const ref = ws['!ref']
-      ? XLSX.utils.decode_range(ws['!ref'])
-      : { s: { r: 0, c: 0 }, e: { r: last, c: Math.max(molde.headers.length - 1, 0) } };
-    ref.e.r = Math.max(ref.e.r, last);
-    ref.e.c = Math.max(ref.e.c, Math.max(molde.headers.length - 1, 0));
-    ws['!ref'] = XLSX.utils.encode_range(ref);
-
-    out.Sheets[nomeAba] = ws;
-    out.SheetNames.push(nomeAba);
-  }
-
-  for (const n of extras) {
-    out.Sheets[n] = extraSheets[n];
-    out.SheetNames.push(n);
-  }
-  return out;
+  const ws = wb.Sheets[modeloNome];
+  if (!ws) throw new Error('Molde sem aba utilizável.');
+  preencherAbaCliente(ws, XLSX, molde, stock, result, cliente);
+  return wb;
 }
 
-export async function exportarPlanilhaMolde(molde: ExportMolde, stock: Produto[], result: Result): Promise<void> {
+export async function exportarPlanilhaMolde(
+  molde: ExportMolde,
+  stock: Produto[],
+  result: Result,
+  clientes: string[],
+): Promise<void> {
   if (avisosMapeamento(molde.map).length) {
     throw new Error(avisosMapeamento(molde.map).join(' '));
   }
+  const escolhidos = clientes.filter((cl) => clienteTemAlocacao(result, cl));
+  if (!escolhidos.length) throw new Error('Escolha pelo menos um cliente para exportar.');
   const XLSX = await import('./sheetjs');
-  const wb = await buildPedidosWorkbook(molde, stock, result);
-  const base = molde.fileName.replace(/\.(xlsx|xls)$/i, '');
-  XLSX.writeFileXLSX(wb, `${base || 'pedidos'}-distribuido.xlsx`);
+  const used = new Set<string>();
+  for (let i = 0; i < escolhidos.length; i++) {
+    const cliente = escolhidos[i];
+    XLSX.writeFileXLSX(await buildPedidoWorkbook(molde, stock, result, cliente), nomeArquivoPedido(molde.fileName, cliente, used));
+    if (i < escolhidos.length - 1) {
+      await new Promise((r) => setTimeout(r, 250));
+    }
+  }
 }

@@ -74,7 +74,7 @@ export interface Drafts {
   novoCliente: string;
   sobraDestino: string;
   sobraNovoCliente: string;
-  /** Molde oficial enviado pela operadora para a exportação em um arquivo. */
+  /** Molde oficial enviado pela operadora para a exportação (um arquivo por cliente). */
   exportMolde: ExportMolde | null;
   /** Clientes que pediram redistribuição com teto de valor (podem perder SKUs). */
   clientesTeto: string[];

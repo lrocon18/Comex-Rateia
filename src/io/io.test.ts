@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
 import type { Produto } from '@/types';
 import { normalizeValor, parseDecimal, parseValorAlvoCelula } from './normalizeValue';
 import { detectColumns, detectExportColumns } from './columnMap';
-import { avisosMapeamento, buildPedidosWorkbook, type ExportMolde } from './exportTemplate';
+import { avisosMapeamento, buildPedidoWorkbook, nomeArquivoPedido, type ExportMolde } from './exportTemplate';
 import { buildSobraWorkbook } from './exportSobra';
 import { subCodes, matchPedido, buildCodeIndex } from './matching';
 import { normalizeCnpj, parseSheet, parseSheetToPedido, pedidosFromWorkbook } from './importCliente';
@@ -396,7 +396,7 @@ describe('pedidosFromWorkbook + matchPedido — integração com a fixture real'
   });
 });
 
-describe('buildPedidosWorkbook — um arquivo, aba por cliente', () => {
+describe('buildPedidoWorkbook — um arquivo por cliente', () => {
   const aoa = [
     ['Pedido'],
     [],
@@ -429,26 +429,28 @@ describe('buildPedidosWorkbook — um arquivo, aba por cliente', () => {
     { codigo: 'A-2', produto: 'peça b', estoque: 5, pu: 3 },
   ];
 
-  it('clona o modelo em uma aba por cliente e não preenche coluna sem origem', async () => {
+  const result = {
+    alloc: {
+      ACME: { 'A-1': 2, 'A-2': 1 },
+      Beta: { 'A-1': 1 },
+    },
+    leftover: {},
+    availFinal: {},
+    notas: {
+      ACME: { solicitado: 10, valor: 7, diferenca: -3, diferencaPct: -0.3, cnpj: '12.345.678/0001-90' },
+      Beta: { solicitado: 2, valor: 2, diferenca: 0, diferencaPct: 0, cnpj: '' },
+    },
+  };
+
+  it('preenche o molde só com o cliente pedido e não mistura os outros', async () => {
     const molde = moldeDeAoa();
     expect(molde.avisos).toEqual([]);
-    const wb = await buildPedidosWorkbook(molde, stock, {
-      alloc: {
-        ACME: { 'A-1': 2, 'A-2': 1 },
-        Beta: { 'A-1': 1 },
-      },
-      leftover: {},
-      availFinal: {},
-      notas: {
-        ACME: { solicitado: 10, valor: 7, diferenca: -3, diferencaPct: -0.3, cnpj: '12.345.678/0001-90' },
-        Beta: { solicitado: 2, valor: 2, diferenca: 0, diferencaPct: 0, cnpj: '' },
-      },
-    });
+    const wb = await buildPedidoWorkbook(molde, stock, result, 'ACME');
 
-    expect(wb.SheetNames[0]).toBe('ACME');
-    expect(wb.SheetNames[1]).toBe('Beta');
-    expect(wb.SheetNames).toContain('Instrucoes');
-    const acme = wb.Sheets.ACME;
+    expect(wb.SheetNames[0]).toBe('Modelo');
+    expect(wb.SheetNames).toEqual(['Modelo', 'Instrucoes']);
+    expect(wb.Sheets.Beta).toBeUndefined();
+    const acme = wb.Sheets.Modelo;
     expect(acme.A3.v).toBe('ACME');
     expect(acme.C3.v).toBe(7);
     expect(acme.A6.v).toBe('A-1');
@@ -460,15 +462,37 @@ describe('buildPedidosWorkbook — um arquivo, aba por cliente', () => {
     expect(acme.G6.v).toBe('NCM-KEEP');
     expect(acme.A7.v).toBe('A-2');
     expect(acme.B7.v).toBe(1);
+  });
 
-    expect(wb.Sheets.Beta.A3.v).toBe('Beta');
-    expect(wb.Sheets.Beta.A6.v).toBe('A-1');
-    expect(wb.Sheets.Beta.B6.v).toBe(1);
+  it('o arquivo de outro cliente não traz linhas do primeiro', async () => {
+    const wb = await buildPedidoWorkbook(moldeDeAoa(), stock, result, 'Beta');
+    const beta = wb.Sheets.Modelo;
+    expect(beta.A3.v).toBe('Beta');
+    expect(beta.A6.v).toBe('A-1');
+    expect(beta.B6.v).toBe(1);
+    expect(beta.A7?.v).not.toBe('A-2');
+    expect(beta.E6.v).toBe('Beta');
+  });
+
+  it('recusa cliente sem alocação', async () => {
+    await expect(buildPedidoWorkbook(moldeDeAoa(), stock, result, 'Gamma')).rejects.toThrow(/Gamma/);
   });
 
   it('não exporta se código ou quantidade ficarem sem coluna', () => {
     expect(avisosMapeamento({ pu: 'PU' }).join(' ')).toMatch(/Código/);
     expect(avisosMapeamento({ pu: 'PU' }).join(' ')).toMatch(/Quantidade/);
+  });
+});
+
+describe('nomeArquivoPedido', () => {
+  it('usa o cliente no nome e evita colisão', () => {
+    const used = new Set<string>();
+    expect(nomeArquivoPedido('oficial.xlsx', 'ACME', used)).toBe('oficial-ACME.xlsx');
+    expect(nomeArquivoPedido('oficial.xlsx', 'ACME', used)).toBe('oficial-ACME-2.xlsx');
+  });
+
+  it('tira caracteres inválidos do Windows', () => {
+    expect(nomeArquivoPedido('molde.xlsx', 'ACME / Filial 2')).toBe('molde-ACME Filial 2.xlsx');
   });
 });
 

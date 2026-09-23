@@ -1,9 +1,10 @@
-import { useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '@/store/useAppStore';
 import { clientePodeRedistribuirTeto, clientTotal, prodMap, puMap } from '@/engine';
 import { isOrigemQuebrada } from '@/engine/granularity';
 import {
   CAMPOS_EXPORT,
+  clientesExportaveis,
   comMapaMolde,
   exportarPlanilhaMolde,
   exportXlsx,
@@ -38,6 +39,15 @@ export function ResultadoTab() {
   const fileInput = useRef<HTMLInputElement>(null);
   const [moldeErro, setMoldeErro] = useState<string | null>(null);
   const [exportando, setExportando] = useState(false);
+  const exportaveis = useMemo(() => (result ? clientesExportaveis(result) : []), [result]);
+  const exportaveisKey = exportaveis.join('\0');
+  const [marcados, setMarcados] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    setMarcados(null);
+  }, [exportaveisKey]);
+
+  const selecionados = marcados ?? exportaveis;
 
   if (!result) {
     return (
@@ -61,7 +71,7 @@ export function ResultadoTab() {
   const prod = prodMap(stock);
   const totals = clients.map((c) => ({ c, v: clientTotal(stock, result, c) }));
   const spread = totals.length > 1 ? Math.max(...totals.map((t) => t.v)) - Math.min(...totals.map((t) => t.v)) : 0;
-  const podeExportar = !!molde && molde.avisos.length === 0;
+  const podeExportar = !!molde && molde.avisos.length === 0 && selecionados.length > 0;
 
   const onMolde = async (file: File) => {
     setMoldeErro(null);
@@ -86,7 +96,7 @@ export function ResultadoTab() {
     setMoldeErro(null);
     setExportando(true);
     try {
-      await exportarPlanilhaMolde(molde, stock, result);
+      await exportarPlanilhaMolde(molde, stock, result, selecionados);
     } catch (e) {
       setMoldeErro(e instanceof Error ? e.message : 'Falha ao exportar.');
     } finally {
@@ -139,7 +149,8 @@ export function ResultadoTab() {
           <div className="space-y-1">
             <CardTitle>Exportar planilha</CardTitle>
             <CardDescription>
-              um arquivo, uma aba por cliente, no molde oficial — envie o modelo e confira o mapeamento
+              um arquivo por cliente, só com os dados dele, no molde oficial — envie o modelo, confira o mapeamento e
+              escolha quem entra
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -147,7 +158,11 @@ export function ResultadoTab() {
               {molde ? 'Trocar molde' : 'Enviar molde'}
             </Button>
             <Button disabled={!podeExportar || exportando} onClick={() => void onExportar()}>
-              {exportando ? 'Exportando…' : 'Exportar planilha'}
+              {exportando
+                ? 'Exportando…'
+                : selecionados.length <= 1
+                  ? 'Exportar planilha'
+                  : `Exportar ${selecionados.length} planilhas`}
             </Button>
             <input
               ref={fileInput}
@@ -206,6 +221,51 @@ export function ResultadoTab() {
               origem — ele não preenche vazio no silêncio.
             </p>
           )}
+          <div>
+            <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+              <span className="label-xs">Clientes nesta exportação</span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="text-xs font-medium text-[var(--color-dock)] underline-offset-2 hover:underline"
+                  onClick={() => setMarcados(exportaveis)}
+                >
+                  Marcar todos
+                </button>
+                <button
+                  type="button"
+                  className="text-xs font-medium text-[var(--color-dock)] underline-offset-2 hover:underline"
+                  onClick={() => setMarcados([])}
+                >
+                  Desmarcar todos
+                </button>
+              </div>
+            </div>
+            <div className="max-h-48 space-y-0.5 overflow-auto rounded-md border border-[var(--color-rule)] bg-[var(--color-paper)] p-2">
+              {exportaveis.map((c) => (
+                <label key={c} className="flex cursor-pointer items-center gap-2 px-1 py-1 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={selecionados.includes(c)}
+                    onChange={() =>
+                      setMarcados(
+                        selecionados.includes(c) ? selecionados.filter((x) => x !== c) : [...selecionados, c],
+                      )
+                    }
+                  />
+                  <span className="min-w-0 flex-1 truncate" title={c}>
+                    {c}
+                  </span>
+                  <span className="num shrink-0 text-xs text-[var(--color-graphite)]">
+                    {formatCurrency(clientTotal(stock, result, c))}
+                  </span>
+                </label>
+              ))}
+            </div>
+            <p className="mt-1.5 text-xs text-[var(--color-graphite)]">
+              Cada cliente gera um arquivo separado, só com os produtos dele.
+            </p>
+          </div>
           {moldeErro && (
             <div className="rounded-md bg-[var(--color-signal-risk-wash)] px-3 py-2 text-sm text-[var(--color-signal-risk)]">
               {moldeErro}
