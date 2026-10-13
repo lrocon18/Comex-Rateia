@@ -9,6 +9,7 @@ import {
   exportarPlanilhaMolde,
   exportXlsx,
   lerMoldeExportacao,
+  moldeEhXlsx,
   type CampoExport,
 } from '@/io';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -185,6 +186,11 @@ export function ResultadoTab() {
                 {' · '}
                 cabeçalho na linha {molde.headerIdx + 1}
               </p>
+              {!moldeEhXlsx(molde) && (
+                <p className="text-sm text-[var(--color-signal-warn)]">
+                  Molde em .xls: a formatação não é preservada. Envie o molde em .xlsx para o pedido sair idêntico.
+                </p>
+              )}
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {CAMPOS_EXPORT.map(({ campo, label, obrigatorio }) => (
                   <label key={campo} className="block">

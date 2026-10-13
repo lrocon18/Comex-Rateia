@@ -7,6 +7,7 @@ import {
   detectExportColumns,
   type CampoExport,
 } from './columnMap';
+import { ehXlsx, preencherXlsx, type CelulaPatch } from './xlsxPatch';
 
 export interface ExportMolde {
   bytes: number[];
@@ -105,14 +106,8 @@ export function nomeArquivoPedido(moldeFileName: string, cliente: string, used: 
   return name;
 }
 
-function preencherAbaCliente(
-  ws: WorkSheet,
-  XLSX: typeof import('./sheetjs'),
-  molde: ExportMolde,
-  stock: Produto[],
-  result: Result,
-  cliente: string,
-) {
+/** Células (0-based) que o pedido daquele cliente grava no molde. */
+function celulasDoPedido(molde: ExportMolde, stock: Produto[], result: Result, cliente: string): CelulaPatch[] {
   const pu = puMap(stock);
   const prod = prodMap(stock);
   const alloc = result.alloc[cliente] || {};
@@ -128,22 +123,39 @@ function preencherAbaCliente(
   const icl = colIndex(molde.headers, molde.map.cliente);
   const icnpj = colIndex(molde.headers, molde.map.cnpj);
 
+  const out: CelulaPatch[] = [];
+  const put = (r: number, c: number, value: string | number, type: 's' | 'n') => out.push({ r, c, value, type });
+
   if (molde.headerIdx > 2) {
-    setCell(ws, XLSX, 2, 0, cliente, 's');
-    setCell(ws, XLSX, 2, 2, total, 'n');
+    put(2, 0, cliente, 's');
+    put(2, 2, total, 'n');
   }
 
   codigos.forEach((codigo, i) => {
     const r = molde.headerIdx + 1 + i;
-    if (ic >= 0) setCell(ws, XLSX, r, ic, codigo, 's');
-    if (iq >= 0) setCell(ws, XLSX, r, iq, alloc[codigo], 'n');
-    if (ipu >= 0) setCell(ws, XLSX, r, ipu, pu[codigo], 'n');
-    if (ip >= 0) setCell(ws, XLSX, r, ip, prod[codigo] || '', 's');
-    if (icl >= 0) setCell(ws, XLSX, r, icl, cliente, 's');
-    if (icnpj >= 0) setCell(ws, XLSX, r, icnpj, cnpj, 's');
+    if (ic >= 0) put(r, ic, codigo, 's');
+    if (iq >= 0) put(r, iq, alloc[codigo], 'n');
+    if (ipu >= 0) put(r, ipu, pu[codigo], 'n');
+    if (ip >= 0) put(r, ip, prod[codigo] || '', 's');
+    if (icl >= 0) put(r, icl, cliente, 's');
+    if (icnpj >= 0) put(r, icnpj, cnpj, 's');
   });
+  return out;
+}
 
-  const last = molde.headerIdx + Math.max(codigos.length, 1);
+function preencherAbaCliente(
+  ws: WorkSheet,
+  XLSX: typeof import('./sheetjs'),
+  molde: ExportMolde,
+  stock: Produto[],
+  result: Result,
+  cliente: string,
+) {
+  for (const cel of celulasDoPedido(molde, stock, result, cliente)) {
+    setCell(ws, XLSX, cel.r, cel.c, cel.value, cel.type);
+  }
+  const qtdLinhas = Object.values(result.alloc[cliente] || {}).filter((q) => q > 0).length;
+  const last = molde.headerIdx + Math.max(qtdLinhas, 1);
   const ref = ws['!ref']
     ? XLSX.utils.decode_range(ws['!ref'])
     : { s: { r: 0, c: 0 }, e: { r: last, c: Math.max(molde.headers.length - 1, 0) } };
@@ -171,6 +183,35 @@ export async function buildPedidoWorkbook(
   return wb;
 }
 
+/** True quando o molde é .xlsx — só esse formato sai idêntico ao original. */
+export function moldeEhXlsx(molde: ExportMolde): boolean {
+  return ehXlsx(molde.bytes);
+}
+
+/** Bytes do .xlsx original com os dados do cliente; o resto do arquivo não muda. */
+export function buildPedidoXlsx(molde: ExportMolde, stock: Produto[], result: Result, cliente: string): Uint8Array {
+  if (!clienteTemAlocacao(result, cliente)) {
+    throw new Error(`Cliente «${cliente}» não tem produtos alocados.`);
+  }
+  return preencherXlsx(new Uint8Array(molde.bytes), celulasDoPedido(molde, stock, result, cliente), {
+    linhaModelo: molde.headerIdx + 1,
+  });
+}
+
+function baixar(bytes: Uint8Array, filename: string) {
+  const blob = new Blob([bytes as BlobPart], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export async function exportarPlanilhaMolde(
   molde: ExportMolde,
   stock: Produto[],
@@ -186,7 +227,9 @@ export async function exportarPlanilhaMolde(
   const used = new Set<string>();
   for (let i = 0; i < escolhidos.length; i++) {
     const cliente = escolhidos[i];
-    XLSX.writeFileXLSX(await buildPedidoWorkbook(molde, stock, result, cliente), nomeArquivoPedido(molde.fileName, cliente, used));
+    const nome = nomeArquivoPedido(molde.fileName, cliente, used);
+    if (moldeEhXlsx(molde)) baixar(buildPedidoXlsx(molde, stock, result, cliente), nome);
+    else XLSX.writeFileXLSX(await buildPedidoWorkbook(molde, stock, result, cliente), nome);
     if (i < escolhidos.length - 1) {
       await new Promise((r) => setTimeout(r, 250));
     }

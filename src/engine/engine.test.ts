@@ -322,3 +322,155 @@ describe('compute — exceção de origem fracionária (doc 04)', () => {
     expect(valores.some((v) => v > 0 && v !== 1.6)).toBe(false);
   });
 });
+
+describe('compute — distribuição por porcentagem (quantidade de cada código)', () => {
+  const stock100: Produto[] = [{ codigo: 'P1', produto: 'p', estoque: 100, pu: 10 }];
+  const pctRules = (pcts: number[], codigos = ['P1']): Regra[] =>
+    pcts.map((pct, i) => ({
+      id: `p${i}`,
+      tipo: 'percentual',
+      cliente: `C${i + 1}`,
+      pct,
+      scope: 'sel',
+      codigos,
+    }));
+  const clientes = (n: number) => Array.from({ length: n }, (_, i) => `C${i + 1}`);
+  const qtds = (r: ReturnType<typeof compute>, n: number, c = 'P1') =>
+    clientes(n).map((cl) => r.alloc[cl]?.[c] || 0);
+
+  it('T1: 25/25/25/25 distribui as 100 unidades, sobra 0', () => {
+    const r = compute(stock100, clientes(4), pctRules([25, 25, 25, 25]));
+    expect(qtds(r, 4)).toEqual([25, 25, 25, 25]);
+    expect(r.leftover).toEqual({});
+  });
+
+  it('T2: 10/20/30/40 distribui 10/20/30/40, sobra 0', () => {
+    const r = compute(stock100, clientes(4), pctRules([10, 20, 30, 40]));
+    expect(qtds(r, 4)).toEqual([10, 20, 30, 40]);
+    expect(r.leftover).toEqual({});
+  });
+
+  it('T3: 25/30/25/20 distribui 25/30/25/20, sobra 0', () => {
+    const r = compute(stock100, clientes(4), pctRules([25, 30, 25, 20]));
+    expect(qtds(r, 4)).toEqual([25, 30, 25, 20]);
+    expect(r.leftover).toEqual({});
+  });
+
+  it('25/25/15/35 consome as 100 unidades', () => {
+    const r = compute(stock100, clientes(4), pctRules([25, 25, 15, 35]));
+    expect(qtds(r, 4)).toEqual([25, 25, 15, 35]);
+    expect(r.leftover).toEqual({});
+  });
+
+  it('arredondamento por maiores restos: 7 unidades a 33/33/34 fecham 7, inteiras e não negativas', () => {
+    const stock: Produto[] = [{ codigo: 'P1', produto: 'p', estoque: 7, pu: 1 }];
+    const r = compute(stock, clientes(3), pctRules([33, 33, 34]));
+    const q = qtds(r, 3);
+    expect(q.reduce((a, b) => a + b, 0)).toBe(7);
+    for (const v of q) {
+      expect(Number.isInteger(v)).toBe(true);
+      expect(v).toBeGreaterThanOrEqual(0);
+    }
+    expect(r.leftover).toEqual({});
+  });
+
+  it('33,33% × 3 conta como 100%: não sobra unidade por arredondamento', () => {
+    const r = compute(stock100, clientes(3), pctRules([33.33, 33.33, 33.33]));
+    expect(qtds(r, 3).reduce((a, b) => a + b, 0)).toBe(100);
+    expect(r.leftover).toEqual({});
+  });
+
+  it('T4: 25/25/15/10 (75%) deixa 25 de sobra', () => {
+    const r = compute(stock100, clientes(4), pctRules([25, 25, 15, 10]));
+    expect(qtds(r, 4)).toEqual([25, 25, 15, 10]);
+    expect(r.leftover).toEqual({ P1: 25 });
+  });
+
+  it('soma acima de 100% normaliza e consome tudo, sem estourar o estoque', () => {
+    const r = compute(stock100, clientes(2), pctRules([60, 60]));
+    expect(qtds(r, 2)).toEqual([50, 50]);
+    expect(r.leftover).toEqual({});
+  });
+
+  it('T6: vários códigos (inclusive PU 0) — todo código elegível é processado', () => {
+    const stock: Produto[] = [
+      { codigo: 'A', produto: 'a', estoque: 100, pu: 5 },
+      { codigo: 'B', produto: 'b', estoque: 37, pu: 12.5 },
+      { codigo: 'C', produto: 'c', estoque: 9, pu: 0 },
+      { codigo: 'D', produto: 'd', estoque: 250, pu: 1.2 },
+      { codigo: 'E', produto: 'e', estoque: 3, pu: 99 },
+    ];
+    const cods = stock.map((s) => s.codigo);
+    const r = compute(stock, clientes(4), pctRules([25, 30, 25, 20], cods));
+    expect(r.leftover).toEqual({});
+    for (const s of stock) {
+      const soma = qtds(r, 4, s.codigo).reduce((a, b) => a + b, 0);
+      expect(soma).toBe(s.estoque);
+    }
+    expect(qtds(r, 4, 'A')).toEqual([25, 30, 25, 20]);
+    expect(qtds(r, 4, 'B')).toEqual([9, 11, 9, 8]);
+    expect(qtds(r, 4, 'C').reduce((a, b) => a + b, 0)).toBe(9);
+    expect(qtds(r, 4, 'D')).toEqual([63, 75, 62, 50]);
+  });
+
+  it('código fora da lista do cliente não entra na % dele', () => {
+    const stock: Produto[] = [
+      { codigo: 'A', produto: 'a', estoque: 100, pu: 1 },
+      { codigo: 'B', produto: 'b', estoque: 100, pu: 1 },
+    ];
+    const rules: Regra[] = [
+      { id: '1', tipo: 'percentual', cliente: 'C1', pct: 50, scope: 'sel', codigos: ['A', 'B'] },
+      { id: '2', tipo: 'percentual', cliente: 'C2', pct: 50, scope: 'sel', codigos: ['A'] },
+    ];
+    const r = compute(stock, ['C1', 'C2'], rules);
+    expect(r.alloc.C1).toEqual({ A: 50, B: 50 });
+    expect(r.alloc.C2).toEqual({ A: 50 });
+    expect(r.leftover).toEqual({ B: 50 });
+  });
+
+  it('origem quebrada com 100%: a fração vai para o cliente de maior %', () => {
+    const stock: Produto[] = [{ codigo: 'P1', produto: 'p', estoque: 10.6, pu: 1 }];
+    const r = compute(stock, clientes(2), pctRules([40, 60]));
+    expect(r.alloc.C1.P1).toBe(4);
+    expect(r.alloc.C2.P1).toBeCloseTo(6.6, 9);
+    expect(r.leftover).toEqual({});
+  });
+
+  it('teto: cliente com tetoReal fica no piso do ideal', () => {
+    const stock: Produto[] = [{ codigo: 'P1', produto: 'p', estoque: 7, pu: 1 }];
+    const rules = pctRules([50, 50]).map((r, i) => (i === 0 ? { ...r, tetoReal: true } : r)) as Regra[];
+    const r = compute(stock, clientes(2), rules);
+    expect(r.alloc.C1.P1).toBe(3);
+    expect(r.alloc.C2.P1).toBe(4);
+  });
+
+  it('nota do cliente percentual traz solicitado e valor em R$', () => {
+    const r = compute(stock100, clientes(2), pctRules([30, 70]));
+    expect(r.notas?.C1).toMatchObject({ solicitado: 300, valor: 300, diferenca: 0 });
+    expect(r.notas?.C2).toMatchObject({ solicitado: 700, valor: 700, diferenca: 0 });
+  });
+
+  it('T5: meta em R$ continua usando o mesmo motor (resultado idêntico ao metaFill)', () => {
+    const stock: Produto[] = [
+      { codigo: 'A', produto: 'a', estoque: 1000, pu: 37.5 },
+      { codigo: 'B', produto: 'b', estoque: 800, pu: 22.1 },
+      { codigo: 'C', produto: 'c', estoque: 500, pu: 61 },
+    ];
+    const rules: Regra[] = [
+      { id: '1', tipo: 'meta', cliente: 'A', valor: 15000, scope: 'all', codigos: [], tetoReal: false },
+      { id: '2', tipo: 'meta', cliente: 'B', valor: 20000, scope: 'all', codigos: [], tetoReal: false },
+    ];
+    const r = compute(stock, ['A', 'B'], rules);
+    const avail = Object.fromEntries(stock.map((s) => [s.codigo, s.estoque]));
+    const pu = puOf(stock);
+    const a = metaFill(['A', 'B', 'C'], avail, pu, 15000);
+    expect(r.alloc.A).toEqual(a.take);
+    for (const c in a.take) avail[c] -= a.take[c];
+    const b = metaFill(['A', 'B', 'C'], avail, pu, 20000);
+    expect(r.alloc.B).toEqual(b.take);
+    expect(r.notas?.A.valor).toBeCloseTo(a.value, 6);
+    expect(r.notas?.B.valor).toBeCloseTo(b.value, 6);
+    expect(Math.abs(r.notas!.A.diferenca)).toBeLessThan(40);
+    expect(Math.abs(r.notas!.B.diferenca)).toBeLessThan(40);
+  });
+});

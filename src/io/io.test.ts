@@ -298,6 +298,63 @@ describe('cabeçalho A3 vs rótulo CNPJ em B1', () => {
   });
 });
 
+describe('porcentagem do cliente em C2', () => {
+  const aba = (c1: unknown, c2: unknown, c3: unknown = '') => [
+    ['Cliente', 'CNPJ', c1],
+    ['', '12.345.678/0001-90', c2],
+    ['ACME LTDA', '', c3],
+    ['Ref. Mercadoria', 'Descricao', 'Qts'],
+    ['A-1', 'peça', '2'],
+  ];
+
+  it('"25%" em C2 vira regra percentual de 25', () => {
+    const pedido = parseSheetToPedido('ABA', aba('', '25%'))!;
+    expect(pedido.valorAlvo).toBe(25);
+    expect(pedido.valorAlvoUnidade).toBe('pct');
+    expect(pedido.nome).toBe('ACME LTDA');
+    expect(pedido.cnpj).toBe('12.345.678/0001-90');
+  });
+
+  it('C2 com % vence o valor em reais da C3', () => {
+    const pedido = parseSheetToPedido('ABA', aba('', '30%', 8000))!;
+    expect(pedido.valorAlvo).toBe(30);
+    expect(pedido.valorAlvoUnidade).toBe('pct');
+  });
+
+  it('número puro em C2 conta como % quando C1 diz "Porcentagem"', () => {
+    const pedido = parseSheetToPedido('ABA', aba('Porcentagem', '12,5'))!;
+    expect(pedido.valorAlvo).toBe(12.5);
+    expect(pedido.valorAlvoUnidade).toBe('pct');
+  });
+
+  it('número puro em C2 sem rótulo de % não muda nada', () => {
+    const pedido = parseSheetToPedido('ABA', aba('', '46', 8000))!;
+    expect(pedido.valorAlvo).toBe(8000);
+    expect(pedido.valorAlvoUnidade).toBe('reais');
+  });
+
+  it('C2 vazia mantém a leitura atual da C3', () => {
+    expect(parseSheetToPedido('ABA', aba('', '', '15%'))).toMatchObject({ valorAlvo: 15, valorAlvoUnidade: 'pct' });
+    expect(parseSheetToPedido('ABA', aba('', '', 8000))).toMatchObject({ valorAlvo: 8000, valorAlvoUnidade: 'reais' });
+  });
+
+  it('CNPJ em C2 é ignorado', () => {
+    const pedido = parseSheetToPedido('ABA', aba('', '12.345.678/0001-90', 8000))!;
+    expect(pedido.valorAlvo).toBe(8000);
+    expect(pedido.valorAlvoUnidade).toBe('reais');
+  });
+
+  it('C2 numérica formatada como % no Excel (0,25) é lida como 25%', async () => {
+    const ws = XLSX.utils.aoa_to_sheet(aba('', ''));
+    ws.C2 = { t: 'n', v: 0.25, z: '0%' };
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'ACME');
+    const [pedido] = await pedidosFromWorkbook(wb);
+    expect(pedido.valorAlvo).toBe(25);
+    expect(pedido.valorAlvoUnidade).toBe('pct');
+  });
+});
+
 describe('cabeçalho sem rótulo — nome ao lado do CNPJ e valor solto', () => {
   it('lê nome e "15k" na mesma linha do CNPJ, sem rótulo nenhum', () => {
     const pedido = parseSheetToPedido('WEX', [

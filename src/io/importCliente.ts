@@ -134,6 +134,25 @@ function parseItens(rows: Row[], headerIdx: number, headers: string[], map: Mapa
   return itens;
 }
 
+const ROTULO_PCT_RE = /%|porc|percent/;
+
+/**
+ * Porcentagem lida da C2: "25%" (texto ou célula formatada como %) ou número
+ * puro quando o rótulo em C1 indica porcentagem. `null` quando não há.
+ */
+function percentualC2(rows: Row[]): number | null {
+  const raw = rows[1]?.[2];
+  const s = cell(rows[1] || [], 2);
+  if (!s || normalizeCnpj(s)) return null;
+  const lido = parseValorAlvoCelula(raw);
+  if (lido.unidade === 'pct') return lido.valor;
+  if (/^\d[\d.,]*$/.test(s) && ROTULO_PCT_RE.test(normalizeHeader(cell(rows[0] || [], 2)))) {
+    const n = parseDecimal(s);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
 export interface ParseSheetOpts {
   /** Mapa memorizado/corrigido na tela; vence a detecção automática. */
   map?: MapaColunas;
@@ -193,6 +212,14 @@ export function parseSheet(aba: string, rows: Row[], opts: ParseSheetOpts = {}):
       valorAlvo = null;
     }
   }
+  // C2 = porcentagem do cliente; quando preenchida, vence o valor-alvo da C3.
+  if (headerIdx > 1) {
+    const pct = percentualC2(rows);
+    if (pct != null) {
+      valorAlvo = pct;
+      valorAlvoUnidade = 'pct';
+    }
+  }
   const itens = parseItens(rows, headerIdx, headers, map);
 
   return {
@@ -215,18 +242,19 @@ export interface AbaRows {
 }
 
 /**
- * C3 formatado como % no Excel vira fração (0,15). Regrava a célula como "15%"
- * para o parser do valor-alvo não tratar como reais.
+ * C2/C3 formatadas como % no Excel viram fração (0,15). Regrava a célula como
+ * "15%" para o parser do valor-alvo não tratar como reais.
  */
-function overlayC3Percentual(ws: WorkSheet, rows: Row[]): void {
-  const c = ws.C3;
+function overlayPercentual(ws: WorkSheet, rows: Row[], addr: 'C2' | 'C3', r: number): void {
+  const c = ws[addr];
   if (!c) return;
   const w = String(c.w ?? '');
   const z = String(c.z ?? '');
   const isPct = w.includes('%') || z.includes('%');
   if (!isPct) return;
-  if (!rows[2]) rows[2] = [];
-  const row = rows[2];
+  while (rows.length <= r) rows.push([]);
+  if (!rows[r]) rows[r] = [];
+  const row = rows[r];
   while (row.length < 3) row.push('');
   if (w.includes('%')) {
     row[2] = w;
@@ -246,7 +274,8 @@ export async function rowsFromWorkbook(wb: WorkBook): Promise<AbaRows[]> {
     const ws = wb.Sheets[aba];
     if (!ws) continue;
     const rows = XLSX.utils.sheet_to_json<Row>(ws, { header: 1, defval: '' });
-    overlayC3Percentual(ws, rows);
+    overlayPercentual(ws, rows, 'C2', 1);
+    overlayPercentual(ws, rows, 'C3', 2);
     abas.push({ aba, rows });
   }
   return abas;
